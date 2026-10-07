@@ -384,6 +384,127 @@ export function installHud(): void {
     ctx.restore();
   };
 
+  // Cat — an orange tabby, front on, in the rooster's flat style. Each cat cue hangs off a real
+  // signal, like everything else here: the pupils widen and the ears lift while it is LISTENING
+  // (transcript recency), the jaw drops with RMS amplitude and the whiskers lift with it, and the
+  // wind-up is a jaw chatter. The tail and the one-ear flick are idle motion on the frame counter,
+  // the same licence the rooster's comb wobble takes.
+  AVATARS.cat = (cx: any, cy: any, sc: any, t: any, state: any) => {
+    const listening = state === 'listening';
+    const bob = Math.sin(t / (listening ? 7 : 15)) * (listening ? 9 : 4);
+    const sway = Math.sin(t / 33) * 0.05;
+    const blink = ((t + 40) % 230) < 8;
+    let jaw = 0;
+    if (state === 'winding-up') {
+      const windAge = t - S.windUpStart;
+      jaw = windAge < 30 ? Math.abs(Math.sin(windAge / 3)) * 6 : 0;   // a chatter, as cats do
+    } else if (state === 'speaking') {
+      jaw = Math.min(S.amplitude * 120, 34);            // no idle floor — see rooster
+    }
+    const perk = listening ? 10 : 0;
+    const fp = t % 190;
+    const flick = fp < 12 ? Math.sin(fp / 12 * Math.PI) * 9 : 0;      // the right ear, now and then
+    const tri = (a: any, b: any, c: any, d: any, e: any, f: any) => {
+      ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(c, d); ctx.lineTo(e, f); ctx.closePath(); ctx.fill();
+    };
+    const FUR = '#f2a65a', DARK = '#d9823a', CREAM = '#fdebd3', PINK = '#f29fb0';
+
+    ctx.save();
+    ctx.translate(cx, cy + bob); ctx.rotate(sway); ctx.scale(sc, sc);
+    ctx.lineCap = 'round';
+
+    // tail, curled up beside the body; it swings faster while listening
+    const swing = Math.sin(t / (listening ? 6 : 20)) * (listening ? 16 : 7);
+    ctx.strokeStyle = DARK; ctx.lineWidth = 30;
+    ctx.beginPath(); ctx.moveTo(112, 232);
+    ctx.quadraticCurveTo(198 + swing * 0.4, 196, 172 + swing, 112); ctx.stroke();
+    ctx.strokeStyle = CREAM;                                          // pale tip
+    ctx.beginPath(); ctx.moveTo(172 + swing, 112); ctx.lineTo(172 + swing, 111); ctx.stroke();
+
+    // body behind the head, with a cream bib
+    ctx.fillStyle = FUR;
+    ctx.beginPath(); ctx.ellipse(0, 200, 150, 120, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = CREAM;
+    ctx.beginPath(); ctx.ellipse(0, 186, 66, 86, 0, 0, 7); ctx.fill();
+
+    // collar and bell
+    ctx.strokeStyle = '#3d7be0'; ctx.lineWidth = 14;
+    ctx.beginPath(); ctx.ellipse(0, 76, 76, 24, 0, 0.14 * Math.PI, 0.86 * Math.PI); ctx.stroke();
+    ctx.fillStyle = '#f5c518';
+    ctx.beginPath(); ctx.arc(0, 106, 13, 0, 7); ctx.fill();
+    ctx.fillStyle = '#8a6a00'; ctx.fillRect(-7, 106, 14, 3);
+
+    // ears — outer, then the pink inside; both lift while listening
+    ctx.fillStyle = FUR;
+    tri(-112, -70, -86, -156 - perk, -26, -118);
+    tri(112, -70, 86, -156 - perk - flick, 26, -118);
+    ctx.fillStyle = PINK;
+    tri(-97, -86, -83, -136 - perk, -48, -113);
+    tri(97, -86, 83, -136 - perk - flick, 48, -113);
+
+    // head, with cheek tufts
+    ctx.fillStyle = FUR;
+    ctx.beginPath(); ctx.ellipse(0, -30, 124, 106, 0, 0, 7); ctx.fill();
+    tri(-112, -8, -150, 22, -100, 40);
+    tri(112, -8, 150, 22, 100, 40);
+
+    // tabby stripes on the brow
+    ctx.fillStyle = DARK;
+    tri(-10, -135, 10, -135, 0, -92);
+    tri(-46, -127, -28, -131, -32, -95);
+    tri(46, -127, 28, -131, 32, -95);
+
+    // eyes — green, with slit pupils that widen when it is listening
+    for (const ex of [-48, 48]) {
+      if (!blink) {
+        const look = listening ? Math.sin(t / 18) * 6 : 0;
+        ctx.fillStyle = '#a8dc6e';
+        ctx.beginPath(); ctx.ellipse(ex, -44, 30, 29, 0, 0, 7); ctx.fill();
+        ctx.fillStyle = '#0b0b10';
+        ctx.beginPath(); ctx.ellipse(ex + look, -44, listening ? 15 : 7, 23, 0, 0, 7); ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(ex + look + 7, -54, 5, 0, 7); ctx.fill();
+      } else {
+        ctx.strokeStyle = '#0b0b10'; ctx.lineWidth = 5;               // shut eyes curve, like a content cat
+        ctx.beginPath(); ctx.moveTo(ex - 26, -46); ctx.quadraticCurveTo(ex, -32, ex + 26, -46); ctx.stroke();
+      }
+    }
+
+    // muzzle; the chin drops with the jaw so the open mouth stays inside it
+    ctx.fillStyle = CREAM;
+    ctx.beginPath(); ctx.arc(-24, 30, 31, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(24, 30, 31, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, 52 + jaw * 0.5, 25, 16 + jaw * 0.3, 0, 0, 7); ctx.fill();
+
+    // mouth — shut, it is the cat's "w"; speaking, a jaw that opens with amplitude
+    if (jaw > 1) {
+      ctx.fillStyle = '#2a1a20';
+      ctx.beginPath(); ctx.ellipse(0, 40 + jaw * 0.5, 15 + jaw * 0.15, 4 + jaw * 0.5, 0, 0, 7); ctx.fill();
+      if (jaw > 9) {
+        ctx.fillStyle = '#e8788a';                                    // tongue
+        ctx.beginPath(); ctx.ellipse(0, 42 + jaw * 0.72, 9, 2 + jaw * 0.2, 0, 0, 7); ctx.fill();
+      }
+    }
+    ctx.strokeStyle = '#7a4a2a'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(0, 16); ctx.lineTo(0, 26); ctx.quadraticCurveTo(-4, 38, -20, 34);
+    ctx.moveTo(0, 26); ctx.quadraticCurveTo(4, 38, 20, 34); ctx.stroke();
+
+    // nose
+    ctx.fillStyle = '#e8788a';
+    tri(-13, 2, 13, 2, 0, 17);
+
+    // whiskers lift as it speaks
+    const lift = jaw * 0.35;
+    ctx.strokeStyle = '#fff6e8'; ctx.lineWidth = 3;
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath(); ctx.moveTo(side * 40, 24 + i * 9);
+        ctx.lineTo(side * 146, 6 + i * 19 - lift * (2 - i)); ctx.stroke();
+      }
+    }
+    ctx.restore();
+  };
+
   // Background only. A real registry entry rather than a guard at the draw call, so the console
   // lists it, the contact sheet renders it, and an unknown-name typo still throws (#60). The
   // backgrounds assume a character owns the middle of the frame; with none selected that room is
@@ -715,7 +836,7 @@ export function installHud(): void {
     stream,
     set(title: any, sub: any) { S.title = title || S.title;
                                const n = sub || ''; if (n !== S.sub) S.subAt = S.frames; S.sub = n; },
-    version: 'hud-v9-safearea',
+    version: 'hud-v10-cat',
     avatars: () => Object.keys(AVATARS),
     backgrounds: () => Object.keys(BACKGROUNDS),
     hud(patch: any) {
@@ -829,7 +950,7 @@ export function createCameraController(page: Page): CameraController {
       // HUD edits become hot too (no rejoin), matching the Node-side surfaces.
       const stale = await page.evaluate(() => {
         const g: any = globalThis as any;
-        if (g.__vexaCam && g.__vexaCam.version === 'hud-v9-safearea') return false;
+        if (g.__vexaCam && g.__vexaCam.version === 'hud-v10-cat') return false;
         try { delete g.__vexaCam; } catch { g.__vexaCam = undefined; }
         return true;
       }).catch(() => false);

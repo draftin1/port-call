@@ -30,7 +30,7 @@ EMOJI = ["👍", "🎉", "💖", "👏", "😂", "😮"]
 # The camera is a character over a background, chosen independently. These must match the registries
 # in patches/bot-camera.ts; an unknown name is REJECTED by the bot with the valid set named, so a
 # drift here shows up as a loud error in the log rather than as a silently unchanged tile.
-AVATARS = ["rooster", "hancock", "tina", "dmarz"]   # the bot exposes avatars() live; this list is a drift risk (see #37)
+AVATARS = ["rooster", "hancock", "tina", "dmarz", "cat"]   # the bot exposes avatars() live; this list is a drift risk (see #37)
 BACKGROUNDS = ["transcript", "vitals", "swarm", "brainrot"]
 # One-tap looks for driving a live meeting: (label, avatar, background).
 PRESETS = [("heartbeat", "rooster", "transcript"),
@@ -191,7 +191,7 @@ function hudframe(el,css,stepped){
 const SAMPLE=['Sample text: roadmap review, camera picker ships Friday.','Transcription latency dropped under half a second.',
   'Budget, hiring, launch plan, customer feedback.'];
 const ABOUT={rooster:'the original rooster',hancock:'a rooster drawn from life',tina:'a cube-faced robot',
-  dmarz:'a one-eyed portrait',none:'no character, background only',transcript:'live captions',
+  dmarz:'a one-eyed portrait',cat:'an orange tabby',none:'no character, background only',transcript:'live captions',
   vitals:'pipeline numbers',swarm:'transcript words in orbit',brainrot:'transcript words thrown around'};
 async function thumb(avatar,bg,rect,lines){
   const f=document.createElement('iframe');
