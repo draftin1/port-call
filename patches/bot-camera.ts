@@ -506,26 +506,34 @@ export function installHud(): void {
   };
 
   // Alien — a tall grey in silhouette, kept green: a great domed cranium that narrows to a small
-  // pointed chin, huge slanted eyes, a slit of a mouth, a thin neck and a slender bare body. A
-  // grey has no antennae, so its level meter is an aura behind the head: it swells and brightens
-  // with RMS amplitude while it speaks, flickers on the wind-up, and holds faint and steady while
-  // it is LISTENING. The mouth opens with amplitude, with no idle floor.
+  // pointed chin, huge slanted eyes, a slit of a mouth, a thin neck and a slender bare body.
+  //
+  // It speaks telepathically, so the mouth never opens. Rings leave its head and travel outward,
+  // and each ring is as bright as the level was at the moment it left: the rings ARE the recent
+  // RMS history. Silence sends nothing, and a level channel that stalls shows as rings that stop
+  // leaving, which is the same honesty rule as the rooster's beak. A point on the brow brightens
+  // with the level, the aura behind the head holds faint while it is LISTENING, and the wind-up is
+  // that point and the aura flickering as it tunes in.
+  const alienWaves: any = { level: [], at: -1 };   // level per frame, newest first
   AVATARS.alien = (cx: any, cy: any, sc: any, t: any, state: any) => {
     const listening = state === 'listening';
     const bob = Math.sin(t / (listening ? 7 : 15)) * (listening ? 9 : 4);
     const sway = Math.sin(t / 33) * 0.05;
     const blink = ((t + 120) % 270) < 8;
-    let mouth = 0, glow = 0;
+    let glow = 0, send = 0;
     if (state === 'winding-up') {
       const windAge = t - S.windUpStart;
-      mouth = windAge < 30 ? Math.abs(Math.sin(windAge / 3)) * 4 : 0;
-      glow = windAge < 30 ? Math.abs(Math.sin(windAge / 2)) * 0.8 : 0;   // the aura flickers as it tunes in
+      glow = windAge < 30 ? Math.abs(Math.sin(windAge / 2)) * 0.8 : 0;
     } else if (state === 'speaking') {
-      mouth = Math.min(S.amplitude * 100, 24);          // no idle floor — see rooster
-      glow = Math.min(S.amplitude * 3, 1);
+      send = Math.min(S.amplitude * 3, 1);              // no idle floor — see rooster
+      glow = send * 0.6;
     } else if (listening) {
       glow = 0.35;
     }
+    if (t - alienWaves.at > 2) alienWaves.level.length = 0;             // not drawn lately: start clean
+    alienWaves.at = t;
+    alienWaves.level.unshift(send);
+    if (alienWaves.level.length > 40) alienWaves.level.pop();
     const SKIN = '#7bd389', SHADE = '#5cbd77', LINE = '#2f7d4a';
 
     ctx.save();
@@ -536,6 +544,18 @@ export function installHud(): void {
     if (glow > 0.02) {
       ctx.fillStyle = 'rgba(150,255,185,' + (0.08 + glow * 0.24) + ')';
       ctx.beginPath(); ctx.ellipse(0, -36, 156 + glow * 18, 150 + glow * 14, 0, 0, 7); ctx.fill();
+    }
+
+    // the message going out: one ring every 7 frames, 40 frames from the head to the edge of
+    // the band Meet shows, each at the brightness the level had when it left
+    ctx.lineWidth = 6;
+    for (let age = t % 7; age < alienWaves.level.length; age += 7) {
+      const level = alienWaves.level[age];
+      if (level < 0.03) continue;
+      const r = 150 + age * 2.3;
+      ctx.strokeStyle = 'rgba(170,255,200,' + (Math.min(0.95, level * 1.4) * (1 - age / 40)) + ')';
+      ctx.beginPath(); ctx.arc(0, -52, r, -0.6, 0.4); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, -52, r, Math.PI - 0.4, Math.PI + 0.6); ctx.stroke();
     }
 
     // slender bare body: thin arms, narrow sloping shoulders, long neck
@@ -561,6 +581,15 @@ export function installHud(): void {
     ctx.fillStyle = 'rgba(255,255,255,0.16)';                           // sheen on the dome
     ctx.beginPath(); ctx.ellipse(-46, -104, 50, 22, -0.4, 0, 7); ctx.fill();
 
+    // where it sends from: a point on the brow, as bright as the level (or the wind-up flicker)
+    const point = Math.max(send, state === 'winding-up' ? glow : 0);
+    if (point > 0.03) {
+      ctx.fillStyle = 'rgba(225,255,235,' + (0.25 + point * 0.4) + ')';
+      ctx.beginPath(); ctx.arc(0, -96, 12 + point * 16, 0, 7); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,' + (0.5 + point * 0.5) + ')';
+      ctx.beginPath(); ctx.arc(0, -96, 5 + point * 4, 0, 7); ctx.fill();
+    }
+
     // eyes — huge, black, wrapped round the head and slanted up at the outer corners
     for (const side of [-1, 1]) {
       ctx.save(); ctx.translate(side * 60, -18); ctx.rotate(side * -0.45);
@@ -579,17 +608,12 @@ export function installHud(): void {
       ctx.restore();
     }
 
-    // nostrils, and the slit of a mouth
+    // nostrils, and a slit of a mouth that stays shut
     ctx.fillStyle = LINE;
     ctx.beginPath(); ctx.arc(-5, 48, 2.5, 0, 7); ctx.fill();
     ctx.beginPath(); ctx.arc(5, 48, 2.5, 0, 7); ctx.fill();
-    if (mouth > 1) {
-      ctx.fillStyle = '#16321f';
-      ctx.beginPath(); ctx.ellipse(0, 72 + mouth * 0.3, 8 + mouth * 0.2, 1.5 + mouth * 0.4, 0, 0, 7); ctx.fill();
-    } else {
-      ctx.strokeStyle = LINE; ctx.lineWidth = 4;
-      ctx.beginPath(); ctx.moveTo(-10, 71); ctx.quadraticCurveTo(0, 75, 10, 71); ctx.stroke();
-    }
+    ctx.strokeStyle = LINE; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(-10, 71); ctx.quadraticCurveTo(0, 75, 10, 71); ctx.stroke();
     ctx.restore();
   };
 
@@ -649,8 +673,6 @@ export function installHud(): void {
     ctx.beginPath(); ctx.ellipse(0, -28, 124, 106, 0, 0, 7); ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,0.18)';                           // sheen on the melon
     ctx.beginPath(); ctx.ellipse(-28, -92, 54, 24, -0.3, 0, 7); ctx.fill();
-    ctx.fillStyle = BELLY;                                              // pale chin and throat
-    ctx.beginPath(); ctx.ellipse(0, 50, 84, 40, 0, 0, 7); ctx.fill();
 
     // eyes, small and set wide, just above the corners of the smile
     for (const ex of [-68, 68]) {
@@ -668,25 +690,33 @@ export function installHud(): void {
       }
     }
 
-    // the beak, pointing at the viewer. Order matters: the lower jaw drops as a whole, the dark
-    // opening sits INSIDE it and is deepest in the middle, and the upper jaw covers its top. Drawn
-    // the other way round the gap was thickest at the corners and an open mouth read as a frown.
-    ctx.fillStyle = '#c9dff2';
-    ctx.beginPath(); ctx.ellipse(0, 40 + jaw, 44, 22, 0, 0, 7); ctx.fill();
+    // the beak: ONE rounded shape pointing at the viewer, split by the smile line — the head's
+    // blue above it, pale below. Earlier tries drew the two jaws as separate ovals with a pale
+    // chin patch behind, which read as a muzzle with a beard, and its open mouth as a dark box.
+    // The lower half drops with amplitude; the gap it opens follows the same curve as the smile.
+    const smile = (dy: any) => { ctx.moveTo(-44, 30 + dy); ctx.quadraticCurveTo(0, 52 + dy, 44, 30 + dy); };
     if (jaw > 1) {
-      ctx.fillStyle = '#1d3550';
-      ctx.beginPath(); ctx.ellipse(0, 40 + jaw * 0.55, 38, 14 + jaw * 0.45, 0, 0, 7); ctx.fill();
-      ctx.fillStyle = '#f08fa0';                                        // tongue
-      ctx.beginPath(); ctx.ellipse(0, 50 + jaw * 0.75, 18, 3 + jaw * 0.18, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = '#1d3550';                                        // inside the mouth
+      ctx.beginPath(); smile(0); ctx.lineTo(44, 30 + jaw); ctx.quadraticCurveTo(0, 52 + jaw, -44, 30 + jaw);
+      ctx.closePath(); ctx.fill();
+      if (jaw > 9) {
+        ctx.fillStyle = '#f08fa0';                                      // tongue
+        ctx.beginPath(); ctx.ellipse(0, 43 + jaw * 0.66, 15, jaw * 0.24, 0, 0, 7); ctx.fill();
+      }
     }
-    ctx.fillStyle = '#6aa9e0';
-    ctx.beginPath(); ctx.ellipse(0, 18, 54, 31, 0, 0, 7); ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.25)';
-    ctx.beginPath(); ctx.ellipse(-14, 4, 22, 9, -0.15, 0, 7); ctx.fill();
-    // the smile: the mouth line runs back from the beak and turns up toward each eye
-    ctx.strokeStyle = LINE; ctx.lineWidth = 5;
+    ctx.fillStyle = '#e3f0fa';                                          // lower jaw
+    ctx.beginPath(); smile(jaw); ctx.ellipse(0, 28 + jaw, 44, 36, 0, 0.05, Math.PI - 0.05);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#4c8ccd';                                          // upper jaw
+    ctx.beginPath(); smile(0); ctx.ellipse(0, 28, 44, 36, 0, 0.05, Math.PI - 0.05, true);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.28)';
+    ctx.beginPath(); ctx.ellipse(-13, 8, 15, 7, -0.2, 0, 7); ctx.fill();
+    // the smile itself, across the beak and on back, turning up toward each eye
+    ctx.strokeStyle = LINE; ctx.lineWidth = 4;
+    ctx.beginPath(); smile(0); ctx.stroke();
     for (const side of [-1, 1]) {
-      ctx.beginPath(); ctx.moveTo(side * 50, 34); ctx.quadraticCurveTo(side * 76, 34, side * 92, 10); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(side * 44, 30); ctx.quadraticCurveTo(side * 66, 30, side * 84, 6); ctx.stroke();
     }
 
     // the water it stands in, in front of the body
@@ -1029,7 +1059,7 @@ export function installHud(): void {
     stream,
     set(title: any, sub: any) { S.title = title || S.title;
                                const n = sub || ''; if (n !== S.sub) S.subAt = S.frames; S.sub = n; },
-    version: 'hud-v11-alien-dolphin',
+    version: 'hud-v12-telepathy',
     avatars: () => Object.keys(AVATARS),
     backgrounds: () => Object.keys(BACKGROUNDS),
     hud(patch: any) {
@@ -1143,7 +1173,7 @@ export function createCameraController(page: Page): CameraController {
       // HUD edits become hot too (no rejoin), matching the Node-side surfaces.
       const stale = await page.evaluate(() => {
         const g: any = globalThis as any;
-        if (g.__vexaCam && g.__vexaCam.version === 'hud-v11-alien-dolphin') return false;
+        if (g.__vexaCam && g.__vexaCam.version === 'hud-v12-telepathy') return false;
         try { delete g.__vexaCam; } catch { g.__vexaCam = undefined; }
         return true;
       }).catch(() => false);
