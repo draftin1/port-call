@@ -67,20 +67,21 @@ PAGE = r"""<!doctype html><meta charset=utf-8><title>Port Call</title>
  header .phase{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
  header .phase b{font-size:17px;white-space:nowrap}
  header .phase span{color:var(--dim);font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ #elapsed{font-family:var(--mono);flex:none}
  #ready{display:flex;gap:12px;font-size:13px;color:var(--dim)} #ready i{font-style:normal;white-space:nowrap}
  #ready .dot{margin-right:5px}
  .ok{background:var(--good)} .warnd{background:var(--warn)} .badd{background:var(--bad)} .pulse{animation:pulse 1.2s infinite}
  @keyframes pulse{50%{opacity:.25}}
 
  /* ── main: the room on the left, the bot on the right ────────────────────────────────────── */
- main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 340px}
- #room{min-width:0;display:flex;flex-direction:column;border-right:1px solid var(--line);position:relative}
+ main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 340px;grid-template-rows:minmax(0,1fr)}
+ #room{min-width:0;min-height:0;display:flex;flex-direction:column;border-right:1px solid var(--line);position:relative}
  #botpane{overflow:auto;padding:14px 16px}
  .card{max-width:560px;margin:28px auto;padding:22px 24px;background:var(--panel);border:1px solid var(--line);border-radius:16px}
  .card h2{margin:0 0 6px;font-size:19px} .card p{margin:6px 0 14px;color:var(--dim)}
- .check{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
- .check:first-of-type{border-top:0} .check .what{flex:1;min-width:0} .check .what small{display:block;color:var(--dim)}
- .check select{max-width:240px}
+ .check{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line);flex-wrap:wrap}
+ .check:first-of-type{border-top:0} .check .what{flex:1 1 200px;min-width:0} .check .what small{display:block;color:var(--dim)}
+ .check select{flex:0 1 260px;min-width:0;max-width:100%}
  #banner{margin:0 0 14px;padding:10px 14px;border-radius:10px;background:#2b1a1c;color:#ffb3ad;display:none}
  .steps{display:flex;gap:6px;margin:10px 0 16px} .steps span{flex:1;height:6px;border-radius:3px;background:var(--line)}
  .steps span.done{background:var(--good)} .steps span.now{background:var(--warn);animation:pulse 1.2s infinite}
@@ -123,12 +124,15 @@ PAGE = r"""<!doctype html><meta charset=utf-8><title>Port Call</title>
    #room{border-right:0} #botpane{border-top:1px solid var(--line);max-height:38vh}
    body[data-mode=call] #botpane{display:none} body[data-mode=call].look #botpane{display:block}
    #ready i b{display:none} .card{margin:14px 12px}
+   header{gap:8px;padding:8px 10px} header .brand{display:none} header button{padding:8px 10px}
+   header .phase b{font-size:15px;overflow:hidden;text-overflow:ellipsis}
+   body[data-mode=call] #ready,body[data-mode=call] #sub{display:none}
  }
 </style>
 
 <header>
   <span class=brand>PORT CALL</span>
-  <div class=phase><span class=dot id=dot></span><b id=phase>…</b><span id=sub></span></div>
+  <div class=phase><span class=dot id=dot></span><b id=phase>…</b><span id=sub></span><span id=elapsed></span></div>
   <div id=ready></div>
   <button id=lookbtn class=ghost style=display:none onclick="document.body.classList.toggle('look')">Look</button>
   <button id=leave class=stop style=display:none onclick=leave()>Leave</button>
@@ -203,7 +207,7 @@ const CFG=CONFIG_JSON;
 const BOT_NAME='Port Call';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const hhmm=t=>new Date(t*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+const hhmm=t=>new Date(t*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
 const mmss=s=>`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
 $('sfxrow').innerHTML=CFG.sfx.map(s=>`<button class=sfx onclick="act({action:'speak',text:'!${s}'})">${s}</button>`).join('');
 $('emorow').innerHTML=CFG.emoji.map(e=>`<button class=emo onclick="act({action:'reaction',emoji:'${e}'})">${e}</button>`).join('');
@@ -257,8 +261,9 @@ function render(s){
   S=s; BOT=s.bot;
   const [cls,title,sub]=PHASES[s.phase]||PHASES.none, m=mode(s.phase);
   $('dot').className='dot '+cls; $('phase').textContent=title;
-  $('sub').textContent=s.phase==='active'?`${s.room} · ${mmss(s.since?Date.now()/1000-s.since:0)}`
-    +(s.presenting?' · presenting':'')+(s.camera===false?' · camera off':''):(s.room&&m!=='lobby'?`${s.room} · ${sub}`:sub);
+  $('sub').textContent=s.phase==='active'?s.room+(s.presenting?' · presenting':'')+(s.camera===false?' · camera off':'')
+    :(s.room&&m!=='lobby'?`${s.room} · ${sub}`:sub);
+  $('elapsed').textContent=s.phase==='active'&&s.since?mmss(Date.now()/1000-s.since):'';
   const prev=document.body.dataset.mode;
   document.body.dataset.mode=$('main').dataset.mode=m;
   $('leave').style.display=m==='call'?'':'none'; $('lookbtn').style.display=m==='call'?'':'none';
@@ -462,7 +467,7 @@ async function refresh(){
 }
 refresh(); initpicker();
 setInterval(refresh,2000);
-setInterval(()=>{ if(S.phase==='active'&&S.since) $('sub').textContent=`${S.room} · ${mmss(Date.now()/1000-S.since)}`+(PRESENTING?' · presenting':''); },1000);
+setInterval(()=>{ if(S.phase==='active'&&S.since) $('elapsed').textContent=mmss(Date.now()/1000-S.since); },1000);
 </script>"""
 
 
