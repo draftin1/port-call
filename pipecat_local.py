@@ -29,6 +29,7 @@ it. Blocks are 256 ms, so anything much under 0.4 s would cut speech at an ordin
     .venv-pipecat/bin/python pipecat_local.py          (./pc up does this)
 """
 import asyncio, json, os, sys, time
+from collections import deque
 from dataclasses import dataclass, field
 
 import uvicorn
@@ -40,7 +41,7 @@ from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnal
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.frames.frames import (
-    DataFrame, Frame, InputAudioRawFrame, OutputAudioRawFrame, OutputTransportMessageFrame,
+    Frame, InputAudioRawFrame, OutputAudioRawFrame, OutputTransportMessageFrame,
     OutputTransportMessageUrgentFrame, TranscriptionFrame, UserStartedSpeakingFrame,
     UserStoppedSpeakingFrame, VADUserStartedSpeakingFrame, VADUserStoppedSpeakingFrame)
 from pipecat.pipeline.pipeline import Pipeline
@@ -50,6 +51,7 @@ from pipecat.processors.audio.vad_processor import VADProcessor
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.serializers.base_serializer import FrameSerializer
 from pipecat.services.openai.stt import OpenAISTTService
+from pipecat.services.stt_service import STTService
 from pipecat.transcriptions.language import Language
 from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams, FastAPIWebsocketTransport
 from pipecat.turns.user_start.vad_user_turn_start_strategy import VADUserTurnStartStrategy
@@ -64,10 +66,33 @@ RATE = 16000
 VAD_START_SECS, VAD_STOP_SECS = 0.2, 0.2
 IDLE_SECS = float(os.environ.get("PIPECAT_IDLE_SECS", 0.45))   # see the docstring: blocks are 256 ms
 VOICE = os.environ.get("PIPECAT_VOICE", "") == "1"
+# How long after the speaker stops this rig's Whisper can take to return (its P99, in Pipecat's
+# terms). The turn detector uses it as the longest it will hold a finished turn open for a
+# transcript that has not arrived. Pipecat's stock figure for Whisper is 1.0 s; large-v3-turbo
+# here takes 0.8-1.1 s from the cut alone, so at 1.0 a turn with a pause in it ended on the words
+# before the pause, ahead of its last transcript. In the ordinary case the turn ends the moment
+# the transcript lands, so a generous figure costs nothing; /health reports what is observed.
+STT_P99_SECS = float(os.environ.get("PIPECAT_STT_P99_SECS", 3.0))
 
 # Pipecat logs transcript text at DEBUG. Transcripts are meeting content: keep them out of the log.
+#
+# One Pipecat warning is filtered and counted instead: "no audio received while speaking, forcing
+# speech stop". It is meant for a microphone muted mid-word. Here it is how most utterances end,
+# because the bot sends no silence (see the docstring), so it fired once per utterance.
+CLOSED_BY_AUDIO_STOPPING = 0
+RECENT_STT_MS: list[int] = []      # the last 50, to check STT_P99_SECS against reality
+
+
+def _log_filter(record) -> bool:
+    global CLOSED_BY_AUDIO_STOPPING
+    if record["name"] == "pipecat.audio.vad.vad_controller" and "forcing speech stop" in record["message"]:
+        CLOSED_BY_AUDIO_STOPPING += 1
+        return False
+    return True
+
+
 logger.remove()
-logger.add(sys.stderr, level=os.environ.get("PIPECAT_LOG", "WARNING"))
+logger.add(sys.stderr, level=os.environ.get("PIPECAT_LOG", "WARNING"), filter=_log_filter)
 
 
 @dataclass
@@ -78,18 +103,12 @@ class Stream:
     capture_ms: int = 0           # capture time of the END of the newest block received
     speech_t0: int = 0            # capture time the current utterance began
     speech_t1: int = 0            # ...and ended
-    stopped_wall: float = 0.0     # wall clock at the cut, to time Whisper from
+    utterance_no: int = 0         # counts speech starts; says whether a transcript is for the latest
+    # One entry per cut, oldest first: (utterance_no, t0, t1, wall clock at the cut). Whisper works
+    # through cuts in order and may be a whole utterance behind, so each call takes ITS cut from
+    # here instead of reading "the current one" off this object.
+    cuts: deque = field(default_factory=deque)
     stats: dict = field(default_factory=lambda: {"utterances": 0, "empty": 0, "stt_ms": 0, "turns": 0})
-
-
-@dataclass
-class Segment(DataFrame):
-    """One utterance, cut by the voice detector and heard once by Whisper."""
-    text: str = ""
-    t0: int = 0
-    t1: int = 0
-    stt_ms: int = 0
-    language: str = "en"
 
 
 class PortCallSerializer(FrameSerializer):
@@ -122,37 +141,62 @@ class Clock(FrameProcessor):
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
         if direction == FrameDirection.DOWNSTREAM:
+            s = self.stream
             if isinstance(frame, VADUserStartedSpeakingFrame):
-                self.stream.speech_t0 = self.stream.capture_ms - int(VAD_START_SECS * 1000)
+                s.utterance_no += 1
+                s.speech_t0 = s.capture_ms - int(VAD_START_SECS * 1000)
             elif isinstance(frame, VADUserStoppedSpeakingFrame):
-                self.stream.speech_t1, self.stream.stopped_wall = self.stream.capture_ms, time.monotonic()
+                s.speech_t1 = s.capture_ms
+                s.cuts.append((s.utterance_no, s.speech_t0, s.speech_t1, time.monotonic()))
         await self.push_frame(frame, direction)
 
 
 class LocalWhisper(OpenAISTTService):
     """Whisper through stt_local.py, so the console's model dropdown still decides the model.
-    Emits a Segment for every utterance, empty ones included, so a cut that produced no text is
-    visible rather than silently missing."""
+    Sends a transcript event for every utterance, empty ones included, so a cut that produced no
+    text is visible rather than silently missing."""
 
     def __init__(self, stream: Stream):
-        super().__init__(base_url=STT_BASE, api_key="local",
+        super().__init__(base_url=STT_BASE, api_key="local", ttfs_p99_latency=STT_P99_SECS,
                          settings=OpenAISTTService.Settings(model="whisper-1", language=Language.EN))
         self.stream = stream
+        self._superseded: set[int] = set()
+
+    async def push_frame(self, frame: Frame, direction: FrameDirection = FrameDirection.DOWNSTREAM):
+        # Pipecat's segmented STT marks EVERY transcript final. That is wrong for one case, and it
+        # ended turns early: someone pauses and carries on, and the first part's transcript lands
+        # after they have resumed. Marked final, it is later taken as the final transcript of the
+        # whole turn, so the turn ended on the words before the pause while the rest was still
+        # with Whisper. A transcript for an utterance that has been superseded goes out not-final.
+        if isinstance(frame, TranscriptionFrame) and id(frame) in self._superseded:
+            self._superseded.discard(id(frame))
+            return await STTService.push_frame(self, frame, direction)
+        await super().push_frame(frame, direction)
 
     async def run_stt(self, audio: bytes):
-        s, text, language = self.stream, "", "en"
-        t0, t1, cut = s.speech_t0, s.speech_t1, s.stopped_wall
+        s, text, language, frames = self.stream, "", "en", []
+        no, t0, t1, cut = s.cuts.popleft() if s.cuts else (s.utterance_no, s.speech_t0, s.speech_t1, 0.0)
         async for frame in super().run_stt(audio):
             if isinstance(frame, TranscriptionFrame):
                 text += frame.text
                 language = str(frame.language.value) if frame.language else language
-            yield frame
+            frames.append(frame)
         ms = round((time.monotonic() - cut) * 1000) if cut else 0
         s.stats["utterances"] += 1
         s.stats["empty"] += 0 if text.strip() else 1
         s.stats["stt_ms"] = ms
+        RECENT_STT_MS.append(ms)
+        del RECENT_STT_MS[:-50]
         text = " ".join(text.split())      # whisper.cpp wraps its text; a transcript line is one line
-        yield Segment(text=text, t0=t0, t1=t1, stt_ms=ms, language=language)
+        # The event leaves BEFORE the transcription frame is released into the pipeline. That frame
+        # is what lets the turn detector end the turn, and Pipecat fast-tracks the turn's end past
+        # ordinary frames, so sent any later the bot hears "turn over" ahead of the words it closes.
+        yield OutputTransportMessageUrgentFrame(message={
+            "type": "transcript", "text": text, "t0": t0, "t1": t1, "language": language, "stt_ms": ms})
+        for frame in frames:
+            if isinstance(frame, TranscriptionFrame) and s.utterance_no != no:
+                self._superseded.add(id(frame))       # they have spoken again since this cut
+            yield frame
 
 
 class Events(FrameProcessor):
@@ -170,9 +214,6 @@ class Events(FrameProcessor):
         if direction == FrameDirection.DOWNSTREAM:
             if isinstance(frame, VADUserStartedSpeakingFrame):
                 await self.send(type="speech_start", t=self.stream.speech_t0)
-            elif isinstance(frame, Segment):
-                await self.send(type="transcript", text=frame.text, t0=frame.t0, t1=frame.t1,
-                                language=frame.language, stt_ms=frame.stt_ms)
             elif isinstance(frame, UserStartedSpeakingFrame):
                 await self.send(type="turn_start", t=self.stream.speech_t0)
             elif isinstance(frame, UserStoppedSpeakingFrame):
@@ -223,6 +264,9 @@ STREAMS: dict[str, Stream] = {}
 def health():
     return {"status": "ok", "pipecat": PIPECAT_VERSION, "stt": STT_BASE, "voice": VOICE,
             "turn_detector": "smart-turn-v3 (local)", "idle_secs": IDLE_SECS,
+            "stt_p99_secs_assumed": STT_P99_SECS,
+            "stt_ms_recent_max": max(RECENT_STT_MS, default=0),      # from the cut; compare with the line above
+            "utterances_closed_by_audio_stopping": CLOSED_BY_AUDIO_STOPPING,
             "streams": {k: v.stats for k, v in STREAMS.items()}}
 
 
