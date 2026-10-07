@@ -19,6 +19,9 @@ services:
     environment:
       TRANSCRIPTION_SERVICE_URL: ${TRANSCRIPTION_SERVICE_URL:-}
       TRANSCRIBE_ENABLED: ${TRANSCRIBE_ENABLED:-false}
+      # Set in .env to send Meet audio to the Pipecat service on the Mac (pipecat_local.py);
+      # empty keeps the bot's built-in lane. See patches/bot-pipeline.ts.
+      PIPECAT_URL: ${PIPECAT_URL:-}
       RECORDING_ENABLED: ${RECORDING_ENABLED:-false}
     ports: !override
       - "127.0.0.1:${VEXA_GW_PORT:-8056}:8056"

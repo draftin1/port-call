@@ -5,7 +5,7 @@
 # from .env, and a Meet code you give explicitly (upstream's default room is the author's lab room,
 # so demo.sh is never run here without one).
 #
-#   ./pc up                      start the stack, local transcription, and the console on localhost:8090
+#   ./pc up                      start the stack, local transcription, Pipecat, and the console on :8090
 #   ./pc join <meet link|code>   send the bot into your meeting — admit it as the host
 #   ./pc say "hello"             any demo.sh act: say chat read camera share unshare react
 #                                check shot log status transcript recam
@@ -29,6 +29,11 @@ case "${1:-}" in
     # Started by port, not by process name: a name match also hits any shell whose command line
     # merely mentions the script, and then nothing gets started.
     up_on 8177 || { nohup python3 stt_local.py serve >/tmp/port-call-stt.log 2>&1 & echo "transcription -> :8177"; }
+    # The Pipecat lane, when .env selects it. Its environment is built once: see pipecat_local.py.
+    if [ -n "${PIPECAT_URL:-}" ]; then
+      [ -x .venv-pipecat/bin/python ] || { echo "PIPECAT_URL is set but .venv-pipecat is missing — uv venv .venv-pipecat && uv pip install --python .venv-pipecat/bin/python 'pipecat-ai[websocket]==1.12.0' uvicorn" >&2; exit 1; }
+      up_on 8179 || { nohup .venv-pipecat/bin/python pipecat_local.py >/tmp/port-call-pipecat.log 2>&1 & echo "pipecat -> :8179"; }
+    fi
     ./relaunch.sh
     # relaunch.sh may have just launched the console; give it a moment to bind before deciding.
     for _ in 1 2 3 4 5 6; do up_on 8090 && break; sleep 0.5; done
@@ -37,6 +42,7 @@ case "${1:-}" in
   down)
     pkill -f "python3 board.py" 2>/dev/null || true
     pkill -f "stt_local.py serve" 2>/dev/null || true
+    pkill -f "pipecat_local.py" 2>/dev/null || true
     docker compose stop ;;
   join)
     code=$(grep -oE '[a-z]{3}-[a-z]{4}-[a-z]{3}' <<<"${2:-}" | head -1 || true)
