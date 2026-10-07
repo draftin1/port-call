@@ -10,9 +10,16 @@ services:
     # Both come from .env. With neither set transcription is off cleanly: no URL, so the bot skips
     # it (pipeline.ts createTranscribe), and TRANSCRIBE_ENABLED=false, because meeting-api otherwise
     # refuses every spawn with a 503 when transcription is wanted but no service is configured.
+    #
+    # Recording is OFF unless .env says RECORDING_ENABLED=true. Upstream defaults it to true, and
+    # then every bot records the meeting's audio into the container's /tmp and tries to upload it
+    # to an object store this rig does not have (meeting-api answers 500, "Invalid endpoint:
+    # http://"). A spawn request that sets recording_enabled itself still wins over this default
+    # (bot_spawn/router.py _resolve_recording_enabled); nothing in this repo sends one.
     environment:
       TRANSCRIPTION_SERVICE_URL: ${TRANSCRIPTION_SERVICE_URL:-}
       TRANSCRIBE_ENABLED: ${TRANSCRIBE_ENABLED:-false}
+      RECORDING_ENABLED: ${RECORDING_ENABLED:-false}
     ports: !override
       - "127.0.0.1:${VEXA_GW_PORT:-8056}:8056"
       - "127.0.0.1:${VEXA_UI_PORT:-3000}:3000"
