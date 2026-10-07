@@ -505,6 +505,199 @@ export function installHud(): void {
     ctx.restore();
   };
 
+  // Alien — a tall grey in silhouette, kept green: a great domed cranium that narrows to a small
+  // pointed chin, huge slanted eyes, a slit of a mouth, a thin neck and a slender bare body. A
+  // grey has no antennae, so its level meter is an aura behind the head: it swells and brightens
+  // with RMS amplitude while it speaks, flickers on the wind-up, and holds faint and steady while
+  // it is LISTENING. The mouth opens with amplitude, with no idle floor.
+  AVATARS.alien = (cx: any, cy: any, sc: any, t: any, state: any) => {
+    const listening = state === 'listening';
+    const bob = Math.sin(t / (listening ? 7 : 15)) * (listening ? 9 : 4);
+    const sway = Math.sin(t / 33) * 0.05;
+    const blink = ((t + 120) % 270) < 8;
+    let mouth = 0, glow = 0;
+    if (state === 'winding-up') {
+      const windAge = t - S.windUpStart;
+      mouth = windAge < 30 ? Math.abs(Math.sin(windAge / 3)) * 4 : 0;
+      glow = windAge < 30 ? Math.abs(Math.sin(windAge / 2)) * 0.8 : 0;   // the aura flickers as it tunes in
+    } else if (state === 'speaking') {
+      mouth = Math.min(S.amplitude * 100, 24);          // no idle floor — see rooster
+      glow = Math.min(S.amplitude * 3, 1);
+    } else if (listening) {
+      glow = 0.35;
+    }
+    const SKIN = '#7bd389', SHADE = '#5cbd77', LINE = '#2f7d4a';
+
+    ctx.save();
+    ctx.translate(cx, cy + bob); ctx.rotate(sway); ctx.scale(sc, sc);
+    ctx.lineCap = 'round';
+
+    // the aura, behind everything
+    if (glow > 0.02) {
+      ctx.fillStyle = 'rgba(150,255,185,' + (0.08 + glow * 0.24) + ')';
+      ctx.beginPath(); ctx.ellipse(0, -36, 156 + glow * 18, 150 + glow * 14, 0, 0, 7); ctx.fill();
+    }
+
+    // slender bare body: thin arms, narrow sloping shoulders, long neck
+    ctx.strokeStyle = SHADE; ctx.lineWidth = 24;
+    for (const side of [-1, 1]) {
+      ctx.beginPath(); ctx.moveTo(side * 74, 160);
+      ctx.quadraticCurveTo(side * 106, 198, side * 100, 256); ctx.stroke();
+    }
+    ctx.fillStyle = SHADE;
+    ctx.beginPath(); ctx.moveTo(-16, 94); ctx.lineTo(16, 94); ctx.lineTo(20, 140);
+    ctx.quadraticCurveTo(84, 142, 88, 178); ctx.lineTo(70, 262); ctx.lineTo(-70, 262);
+    ctx.lineTo(-88, 178); ctx.quadraticCurveTo(-84, 142, -20, 140); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';                           // sheen down the chest
+    ctx.beginPath(); ctx.ellipse(0, 206, 32, 52, 0, 0, 7); ctx.fill();
+
+    // head — the domed cranium, then cheeks drawing in to a small chin
+    ctx.fillStyle = SKIN;
+    ctx.beginPath(); ctx.moveTo(0, -152);
+    ctx.bezierCurveTo(132, -152, 158, -60, 118, -6);
+    ctx.bezierCurveTo(88, 36, 40, 92, 0, 106);
+    ctx.bezierCurveTo(-40, 92, -88, 36, -118, -6);
+    ctx.bezierCurveTo(-158, -60, -132, -152, 0, -152); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.16)';                           // sheen on the dome
+    ctx.beginPath(); ctx.ellipse(-46, -104, 50, 22, -0.4, 0, 7); ctx.fill();
+
+    // eyes — huge, black, wrapped round the head and slanted up at the outer corners
+    for (const side of [-1, 1]) {
+      ctx.save(); ctx.translate(side * 60, -18); ctx.rotate(side * -0.45);
+      if (!blink) {
+        const look = listening ? Math.sin(t / 18) * 6 : 0;
+        ctx.fillStyle = '#0b0b10';
+        ctx.beginPath(); ctx.ellipse(0, 0, 50, 29, 0, 0, 7); ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(-12 + look, -10, 7, 0, 7); ctx.fill();
+        ctx.fillStyle = '#8b7bff';
+        ctx.beginPath(); ctx.arc(12 + look, 9, 4, 0, 7); ctx.fill();
+      } else {
+        ctx.strokeStyle = LINE; ctx.lineWidth = 6;
+        ctx.beginPath(); ctx.moveTo(-44, 0); ctx.quadraticCurveTo(0, 14, 44, 0); ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // nostrils, and the slit of a mouth
+    ctx.fillStyle = LINE;
+    ctx.beginPath(); ctx.arc(-5, 48, 2.5, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(5, 48, 2.5, 0, 7); ctx.fill();
+    if (mouth > 1) {
+      ctx.fillStyle = '#16321f';
+      ctx.beginPath(); ctx.ellipse(0, 72 + mouth * 0.3, 8 + mouth * 0.2, 1.5 + mouth * 0.4, 0, 0, 7); ctx.fill();
+    } else {
+      ctx.strokeStyle = LINE; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(-10, 71); ctx.quadraticCurveTo(0, 75, 10, 71); ctx.stroke();
+    }
+    ctx.restore();
+  };
+
+  // Dolphin — head and shoulders out of the water, front on. Head-on, a dolphin is only a dolphin
+  // by its dorsal fin, its bottle-nose beak and the smile line running back from it, so those are
+  // drawn large. Its signals: the lower jaw drops with RMS amplitude (and clicks on the wind-up,
+  // as dolphins do), a spout rises from the blowhole only as high as the level, and the flippers
+  // wave while it is LISTENING. The ripple is idle motion on the frame counter, like the comb.
+  AVATARS.dolphin = (cx: any, cy: any, sc: any, t: any, state: any) => {
+    const listening = state === 'listening';
+    const bob = Math.sin(t / (listening ? 7 : 15)) * (listening ? 9 : 4);
+    const sway = Math.sin(t / 33) * 0.05;
+    const blink = ((t + 170) % 250) < 8;
+    let jaw = 0, spout = 0;
+    if (state === 'winding-up') {
+      const windAge = t - S.windUpStart;
+      jaw = windAge < 30 ? Math.abs(Math.sin(windAge / 2)) * 6 : 0;      // clicks
+    } else if (state === 'speaking') {
+      jaw = Math.min(S.amplitude * 120, 30);            // no idle floor — see rooster
+      spout = Math.min(S.amplitude * 150, 40);
+    }
+    const flap = Math.sin(t / (listening ? 5 : 18)) * (listening ? 18 : 6);
+    const BLUE = '#5b9bd5', DEEP = '#3b78b8', BELLY = '#e8f3fc', LINE = '#28568a';
+
+    ctx.save();
+    ctx.translate(cx, cy + bob); ctx.rotate(sway); ctx.scale(sc, sc);
+    ctx.lineCap = 'round';
+
+    // spout from the blowhole: only while speaking, and only as tall as the level
+    if (spout > 2) {
+      ctx.fillStyle = '#bfe6ff';
+      for (let i = 0; i < 5; i++) {
+        const k = (i + 1) / 5;
+        ctx.beginPath(); ctx.arc(-46 - k * 16 + Math.sin(i * 2.1 + t / 6) * 6, -128 - spout * k, 7 - i, 0, 7); ctx.fill();
+      }
+    }
+
+    // dorsal fin behind the head, swept back
+    ctx.fillStyle = DEEP;
+    ctx.beginPath(); ctx.moveTo(-30, -118);
+    ctx.quadraticCurveTo(-4, -176, 46, -178);
+    ctx.quadraticCurveTo(20, -150, 34, -112); ctx.closePath(); ctx.fill();
+
+    // flippers behind the body; they wave while listening
+    for (const side of [-1, 1]) {
+      ctx.beginPath(); ctx.moveTo(side * 104, 120);
+      ctx.quadraticCurveTo(side * 186, 112 - flap, side * 204, 164 - flap * 1.4);
+      ctx.quadraticCurveTo(side * 160, 166, side * 108, 178); ctx.closePath(); ctx.fill();
+    }
+
+    // body with a pale belly, then the head
+    ctx.fillStyle = BLUE;
+    ctx.beginPath(); ctx.ellipse(0, 205, 138, 125, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = BELLY;
+    ctx.beginPath(); ctx.ellipse(0, 214, 84, 108, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = BLUE;
+    ctx.beginPath(); ctx.ellipse(0, -28, 124, 106, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';                           // sheen on the melon
+    ctx.beginPath(); ctx.ellipse(-28, -92, 54, 24, -0.3, 0, 7); ctx.fill();
+    ctx.fillStyle = BELLY;                                              // pale chin and throat
+    ctx.beginPath(); ctx.ellipse(0, 50, 84, 40, 0, 0, 7); ctx.fill();
+
+    // eyes, small and set wide, just above the corners of the smile
+    for (const ex of [-68, 68]) {
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.ellipse(ex, -34, 19, blink ? 3 : 20, 0, 0, 7); ctx.fill();
+      if (!blink) {
+        const look = listening ? Math.sin(t / 18) * 5 : 0;
+        ctx.fillStyle = '#0b0b10';
+        ctx.beginPath(); ctx.arc(ex + look, -32, 11, 0, 7); ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(ex + look + 4, -37, 4, 0, 7); ctx.fill();
+      } else {
+        ctx.strokeStyle = '#0b0b10'; ctx.lineWidth = 5;
+        ctx.beginPath(); ctx.moveTo(ex - 16, -34); ctx.lineTo(ex + 16, -34); ctx.stroke();
+      }
+    }
+
+    // the beak, pointing at the viewer. Order matters: the lower jaw drops as a whole, the dark
+    // opening sits INSIDE it and is deepest in the middle, and the upper jaw covers its top. Drawn
+    // the other way round the gap was thickest at the corners and an open mouth read as a frown.
+    ctx.fillStyle = '#c9dff2';
+    ctx.beginPath(); ctx.ellipse(0, 40 + jaw, 44, 22, 0, 0, 7); ctx.fill();
+    if (jaw > 1) {
+      ctx.fillStyle = '#1d3550';
+      ctx.beginPath(); ctx.ellipse(0, 40 + jaw * 0.55, 38, 14 + jaw * 0.45, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = '#f08fa0';                                        // tongue
+      ctx.beginPath(); ctx.ellipse(0, 50 + jaw * 0.75, 18, 3 + jaw * 0.18, 0, 0, 7); ctx.fill();
+    }
+    ctx.fillStyle = '#6aa9e0';
+    ctx.beginPath(); ctx.ellipse(0, 18, 54, 31, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.beginPath(); ctx.ellipse(-14, 4, 22, 9, -0.15, 0, 7); ctx.fill();
+    // the smile: the mouth line runs back from the beak and turns up toward each eye
+    ctx.strokeStyle = LINE; ctx.lineWidth = 5;
+    for (const side of [-1, 1]) {
+      ctx.beginPath(); ctx.moveTo(side * 50, 34); ctx.quadraticCurveTo(side * 76, 34, side * 92, 10); ctx.stroke();
+    }
+
+    // the water it stands in, in front of the body
+    const rip = Math.sin(t / 16) * 4;
+    ctx.fillStyle = '#2a6fb0';
+    ctx.beginPath(); ctx.ellipse(0, 232, 212 + rip, 34, 0, 0, 7); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.ellipse(0, 226, 156 - rip, 15, 0, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
+    ctx.restore();
+  };
+
   // Background only. A real registry entry rather than a guard at the draw call, so the console
   // lists it, the contact sheet renders it, and an unknown-name typo still throws (#60). The
   // backgrounds assume a character owns the middle of the frame; with none selected that room is
@@ -836,7 +1029,7 @@ export function installHud(): void {
     stream,
     set(title: any, sub: any) { S.title = title || S.title;
                                const n = sub || ''; if (n !== S.sub) S.subAt = S.frames; S.sub = n; },
-    version: 'hud-v10-cat',
+    version: 'hud-v11-alien-dolphin',
     avatars: () => Object.keys(AVATARS),
     backgrounds: () => Object.keys(BACKGROUNDS),
     hud(patch: any) {
@@ -950,7 +1143,7 @@ export function createCameraController(page: Page): CameraController {
       // HUD edits become hot too (no rejoin), matching the Node-side surfaces.
       const stale = await page.evaluate(() => {
         const g: any = globalThis as any;
-        if (g.__vexaCam && g.__vexaCam.version === 'hud-v10-cat') return false;
+        if (g.__vexaCam && g.__vexaCam.version === 'hud-v11-alien-dolphin') return false;
         try { delete g.__vexaCam; } catch { g.__vexaCam = undefined; }
         return true;
       }).catch(() => false);
