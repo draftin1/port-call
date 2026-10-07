@@ -1,0 +1,19 @@
+# Local overrides for this laptop — not part of upstream. Compose loads this file automatically.
+services:
+  # Transcription is local (stt_local.py on the Mac), so the shim that uploads meeting audio to
+  # near.ai stays off unless COMPOSE_PROFILES=transcribe is set in .env.
+  near-shim:
+    profiles: ["transcribe"]
+  # Upstream publishes these on every interface. On a laptop that puts token minting and the
+  # bot's desktop on whatever network it joins, so they are loopback-only here.
+  vexa-lite:
+    # Both come from .env. With neither set transcription is off cleanly: no URL, so the bot skips
+    # it (pipeline.ts createTranscribe), and TRANSCRIBE_ENABLED=false, because meeting-api otherwise
+    # refuses every spawn with a 503 when transcription is wanted but no service is configured.
+    environment:
+      TRANSCRIPTION_SERVICE_URL: ${TRANSCRIPTION_SERVICE_URL:-}
+      TRANSCRIBE_ENABLED: ${TRANSCRIBE_ENABLED:-false}
+    ports: !override
+      - "127.0.0.1:${VEXA_GW_PORT:-8056}:8056"
+      - "127.0.0.1:${VEXA_UI_PORT:-3000}:3000"
+      - "127.0.0.1:${VEXA_VNC_PORT:-6080}:6080"

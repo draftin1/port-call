@@ -8,11 +8,14 @@ demo.sh; nothing here is a second implementation of the bot's behaviour.
 Deliberately has no auth: it is bound to a machine on a private network and it can make a bot join
 a meeting, so do NOT expose it to the internet.
 """
-import json, mimetypes, os, pathlib, re, subprocess, urllib.request
+import json, mimetypes, os, pathlib, re, subprocess, urllib.error, urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 CONTAINER = "vexa-rig-vexa-lite-1"
 GATEWAY = "http://localhost:8056"
+# stt_local.py: transcription on this machine, and the one process that knows which Whisper model
+# is loaded. The console only relays to it.
+STT = "http://127.0.0.1:8177"
 BOT_TOKEN = open("/tmp/vexa-bot-token.txt").read().strip()
 TX_TOKEN = open("/tmp/vexa-tx-token.txt").read().strip()
 # The daily rung writes its evidence here (daily.sh). Served read-only at /daily so a run is
@@ -109,6 +112,10 @@ PAGE = """<!doctype html><meta charset=utf-8><title>Vexa console</title>
 capture is patched out of the path entirely. Presenting a real page is issue #7.</div>
 
 <h2>live transcript</h2>
+<div class=row style="align-items:center;margin-bottom:8px">
+  <select id=sttmodel onchange=sttpick() title="local Whisper model used for transcription"></select>
+  <span id=sttstatus style="font:13px ui-monospace,monospace;color:#8a8aa0"></span>
+</div>
 <div id=tx></div>
 
 <h2>what the bot sees</h2>
@@ -164,7 +171,30 @@ async function refresh(){
     ||'<div style=color:#5a5a70>nothing yet</div>';
   $('tx').scrollTop=$('tx').scrollHeight;
 }
-refresh(); upcoming(); setInterval(refresh,5000); setInterval(upcoming,120000);
+// Transcription model. Picking one that is not on disk downloads it first, so each option says
+// how big it is and the pick asks before fetching. The loaded model keeps transcribing meanwhile.
+let STT={};
+async function stt(){
+  STT=await (await fetch('/stt')).json();
+  const sel=$('sttmodel'), a=STT.activity, target=a?a.name:STT.current;
+  if(document.activeElement!==sel){
+    sel.innerHTML=(target?'':'<option value="" disabled selected>choose a model…</option>')
+      +(STT.models||[]).map(m=>`<option value="${m.name}"${m.name===target?' selected':''}>`
+        +`${m.name} — ${m.note} · ${m.size_mb} MB${m.installed?'':' · not downloaded'}</option>`).join('');
+    sel.disabled=!!a||!STT.models;
+  }
+  $('sttstatus').textContent=!STT.models?'local transcription is not running — ./pc up'
+    :a?(a.kind==='downloading'?`downloading ${a.name} ${Math.floor(a.done*100/a.total)}%`:`loading ${a.name}…`)
+    :(STT.current?`transcribing on this Mac with ${STT.current}`:'no model loaded')
+      +(STT.error?` — ${STT.error}`:'');
+}
+async function sttpick(){
+  const sel=$('sttmodel'), m=(STT.models||[]).find(x=>x.name===sel.value);
+  sel.blur();
+  if(m&&!m.installed&&!confirm(`Download ${m.file} (${m.size_mb} MB) from ${STT.source}?`)) return stt();
+  await post('/stt',{name:sel.value}); stt();
+}
+refresh(); upcoming(); stt(); setInterval(refresh,5000); setInterval(upcoming,120000); setInterval(stt,2000);
 </script>"""
 
 
@@ -212,6 +242,19 @@ def upcoming_events(hours=12):
                         "when": start.astimezone().strftime("%H:%M"),
                         "soon": mins <= 10})
     return sorted(out, key=lambda x: x["when"])[:8]
+
+
+def stt(path, body=None):
+    """Ask the local transcription service. Its JSON error bodies are answers, not failures."""
+    req = urllib.request.Request(f"{STT}{path}", method="POST" if body else "GET",
+                                 data=json.dumps(body).encode() if body else None)
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return json.load(r)
+    except urllib.error.HTTPError as e:
+        return json.load(e)
+    except OSError:
+        return {"state": "off"}
 
 
 def gw(path, token, method="GET", body=None):
@@ -267,6 +310,8 @@ class H(BaseHTTPRequestHandler):
                       "camera": sc.get("cameraOn"), "presenting": sc.get("presenting"),
                       "transcript": transcript(b["native_meeting_id"])}
             return self._send(json.dumps(st), "application/json")
+        if self.path == "/stt":
+            return self._send(json.dumps(stt("/models")), "application/json")
         if self.path == "/upcoming":
             try:
                 return self._send(json.dumps(upcoming_events()), "application/json")
@@ -293,6 +338,11 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         n = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(n) or "{}")
+
+        if self.path == "/stt":
+            r = stt("/model", {"name": body.get("name")})
+            return self._send(r.get("error") or f"transcription model -> {body.get('name')} ({r.get('state')})",
+                              "text/plain")
 
         if self.path == "/join":
             # Accept a full URL or a bare code — pasting the link out of an invite is the fast path.
@@ -331,4 +381,4 @@ class H(BaseHTTPRequestHandler):
         pass
 
 
-HTTPServer(("0.0.0.0", 8090), H).serve_forever()
+HTTPServer(("127.0.0.1", 8090), H).serve_forever()

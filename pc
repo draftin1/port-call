@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Local launcher for this laptop — not part of upstream port-call.
+#
+# Runs the repo's own scripts with what this machine needs: the OrbStack engine, the admin token
+# from .env, and a Meet code you give explicitly (upstream's default room is the author's lab room,
+# so demo.sh is never run here without one).
+#
+#   ./pc up                      start the stack, local transcription, and the console on localhost:8090
+#   ./pc join <meet link|code>   send the bot into your meeting — admit it as the host
+#   ./pc say "hello"             any demo.sh act: say chat read camera share unshare react
+#                                check shot log status transcript recam
+#   ./pc stop                    the bot leaves
+#   ./pc model [name]            show transcription models, or switch (downloads it if needed)
+#   ./pc down                    stop the stack and the console
+#   ./pc bench                   the no-meeting test suite
+#   ./pc <script.sh> [args]      any other repo script, same environment
+set -euo pipefail
+cd "$(dirname "$0")"
+export DOCKER_CONTEXT=${DOCKER_CONTEXT:-orbstack}
+set -a; . ./.env; set +a
+
+usage() { sed -n '2,17p' "$0"; exit "${1:-0}"; }
+up_on() { nc -z 127.0.0.1 "$1" 2>/dev/null; }
+room() { [ -s .room ] || { echo "no meeting yet — run: ./pc join <meet link|code>" >&2; exit 1; }; cat .room; }
+
+case "${1:-}" in
+  ""|-h|--help|help) usage ;;
+  up)
+    # Started by port, not by process name: a name match also hits any shell whose command line
+    # merely mentions the script, and then nothing gets started.
+    up_on 8177 || { nohup python3 stt_local.py serve >/tmp/port-call-stt.log 2>&1 & echo "transcription -> :8177"; }
+    ./relaunch.sh
+    # relaunch.sh may have just launched the console; give it a moment to bind before deciding.
+    for _ in 1 2 3 4 5 6; do up_on 8090 && break; sleep 0.5; done
+    up_on 8090 || { nohup python3 board.py >/tmp/vexa-board.log 2>&1 & echo "console -> :8090"; }
+    echo "console -> http://localhost:8090   bot desktop -> http://localhost:${VEXA_VNC_PORT:-6080}/vnc.html" ;;
+  down)
+    pkill -f "python3 board.py" 2>/dev/null || true
+    pkill -f "stt_local.py serve" 2>/dev/null || true
+    docker compose stop ;;
+  join)
+    code=$(grep -oE '[a-z]{3}-[a-z]{4}-[a-z]{3}' <<<"${2:-}" | head -1 || true)
+    [ -n "$code" ] || { echo "usage: ./pc join <meet link|code>   e.g. ./pc join abc-defg-hij" >&2; exit 1; }
+    echo "$code" > .room
+    ROOM=$code ./demo.sh join ;;
+  bench) ./bench.sh ;;
+  model) if [ -n "${2:-}" ]; then python3 stt_local.py use "$2"; else python3 stt_local.py status; fi ;;
+  *.sh|*.py) s=$1; shift; "./$s" "$@" ;;
+  *) ROOM=$(room) ./demo.sh "$@" ;;
+esac
