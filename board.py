@@ -22,6 +22,7 @@ TX_TOKEN = open("/tmp/vexa-tx-token.txt").read().strip()
 # something you can look at rather than something you have to ssh for.
 DAILY = "/media/amiller/fractal-nvme2/vexa-archive/daily"
 SFX = ["airhorn", "gavel", "ding", "objection", "order", "noted", "correct", "welcome", "timesup"]
+HERE = pathlib.Path(__file__).resolve().parent
 # Meet's picker set VARIES by UI state — a dump taken while presenting showed 🎊 💗 💯 😆 🙁 😲,
 # while the normal in-call picker shows these. The controller fails loudly (with the candidate
 # list) when an emoji is absent rather than silently picking a neighbour.
@@ -61,6 +62,18 @@ PAGE = """<!doctype html><meta charset=utf-8><title>Vexa console</title>
  #tx div{margin:3px 0} #tx b{color:#7ce38b;font-weight:600}
  #log{font:12px ui-monospace,monospace;color:#5a5a70;white-space:pre-wrap;margin-top:14px;max-height:90px;overflow:auto}
  img{width:100%;border-radius:10px;border:1px solid #23233a;margin-top:8px}
+ .picker{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px}
+ .stage{flex:0 0 236px}
+ .stage iframe{display:block;width:236px;height:280px;border:1px solid #23233a;border-radius:14px;background:#07070c}
+ .choices{flex:1;min-width:280px}
+ .lbl{font:12px system-ui;text-transform:uppercase;letter-spacing:.09em;color:#8a8aa0;margin:0 0 6px}
+ .cards{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+ .card{padding:0;width:92px;background:#14141c;border:2px solid #23233a;border-radius:12px;overflow:hidden;
+      font:600 13px system-ui;color:#c8c8d8}
+ .card:hover{background:#14141c;border-color:#5a5a8a} .card.sel{border-color:#7ce38b;color:#fff}
+ .card:focus-visible{outline:2px solid #8ab4ff;outline-offset:2px}
+ .card img{display:block;width:88px;height:88px;background:#07070c} .card span{display:block;padding:5px 0 6px}
+ .cap{font:13px ui-monospace,monospace;color:#8a8aa0;margin-top:6px}
  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:middle}
 </style>
 
@@ -95,6 +108,19 @@ PAGE = """<!doctype html><meta charset=utf-8><title>Vexa console</title>
 <div class=row id=emorow></div>
 
 <h2>camera</h2>
+<div class=picker id=picker style=display:none>
+  <div class=stage>
+    <iframe id=stage title="live preview of the bot's camera tile"></iframe>
+    <div class=cap id=stagecap></div>
+  </div>
+  <div class=choices>
+    <div class=lbl>character</div>
+    <div class=cards id=avcards></div>
+    <div class=lbl>background</div>
+    <div class=cards id=bgcards></div>
+    <div class=cap>Hover a card to watch it listen and speak. Click to use it.</div>
+  </div>
+</div>
 <div class=row>
   <input id=head placeholder="headline on the bot's camera / shared screen">
   <select id=avatar title="who the bot looks like"></select>
@@ -135,9 +161,126 @@ $('presetrow').innerHTML=PRESETS_.map(([label,a,b])=>
   `<button class=skin onclick="skin('${a}','${b}')">${label}</button>`).join('');
 // Switching a skin is live: it is HUD state on a canvas Meet is already publishing, so it lands on
 // the next frame with no respawn. Only a CODE change to the HUD needs re-injection.
-function skin(a,b){$('avatar').value=a;$('bg').value=b;cam()}
+function skin(a,b){$('avatar').value=a;$('bg').value=b;sync();cam()}
 function cam(){act({action:'camera_show',text:$('head').value||'VEXA',
                     avatar:$('avatar').value,bg:$('bg').value})}
+
+// ── camera picker ────────────────────────────────────────────────────────────────────────────
+// Every preview is drawn by the bot's own HUD code: /hud.mjs is the compiled module the bot runs,
+// so a card shows what the meeting tile will show, and a character added to the HUD appears here
+// without touching this page. One live instance (the stage) plus still thumbnails: ten canvases
+// animating at once would cost more than a picker should. The two <select>s stay as the value
+// cam() reads, and as the whole control if the HUD module cannot be loaded.
+const HUDURL=location.origin+'/hud.mjs?'+Date.now();
+// stepped: frames are advanced by hand (thumbnails) rather than by the display (the stage).
+const huddoc=(css,stepped)=>`<!doctype html><style>html,body{margin:0;height:100%;overflow:hidden;background:#07070c}
+canvas{position:absolute;${css}}</style><script type=module>
+const make=document.createElement.bind(document);
+document.createElement=t=>{const el=make(t); if(t==='canvas'&&!window.cvs) window.cvs=el; return el};
+${stepped?'window.requestAnimationFrame=cb=>{window.step=cb;return 0};':''}
+(await import('${HUDURL}')).installHud();
+document.body.appendChild(window.cvs); window.ready=true;
+<\\/script>`;
+function hudframe(el,css,stepped){
+  el.srcdoc=huddoc(css,stepped);
+  return new Promise((ok,no)=>{let n=0; const iv=setInterval(()=>{
+    const w=el.contentWindow;
+    if(w&&w.ready){clearInterval(iv);ok(w)} else if(++n>120){clearInterval(iv);no(new Error('the HUD module did not load'))}
+  },50)});
+}
+const SAMPLE=['Sample text: roadmap review, camera picker ships Friday.','Transcription latency dropped under half a second.',
+  'Budget, hiring, launch plan, customer feedback.'];
+const ABOUT={rooster:'the original rooster',hancock:'a rooster drawn from life',tina:'a cube-faced robot',
+  dmarz:'a one-eyed portrait',none:'no character, background only',transcript:'live captions',
+  vitals:'pipeline numbers',swarm:'transcript words in orbit',brainrot:'transcript words thrown around'};
+async function thumb(avatar,bg,rect,lines){
+  const f=document.createElement('iframe');
+  f.style.cssText='position:absolute;width:0;height:0;border:0;visibility:hidden';
+  document.body.appendChild(f);
+  try{
+    const w=await hudframe(f,'',true), hud=w.__vexaCam;
+    hud.hud({avatar,bg});
+    // The word backgrounds take in a line on the frame it lands, so feed them the way a call does.
+    if(lines) for(const line of SAMPLE){hud.hud({speaker:'Sample',line}); for(let i=0;i<30;i++) w.step()}
+    while(hud.frames()%240!==40) w.step();  // frame 40 of the cycle is clear of every character's blink
+    const c=document.createElement('canvas'), g=c.getContext('2d'); c.width=c.height=176;
+    g.drawImage(w.cvs,...rect,0,0,176,176);
+    if(avatar==='none'&&!lines){            // an empty frame reads as a broken image; mark it as a choice
+      g.strokeStyle='#5a5a70'; g.lineWidth=4; g.setLineDash([10,8]);
+      g.beginPath(); g.arc(88,88,46,0,7); g.stroke();
+      g.setLineDash([]); g.beginPath(); g.moveTo(57,119); g.lineTo(119,57); g.stroke();
+    }
+    return c.toDataURL();
+  }finally{f.remove()}
+}
+let STAGE=null, BOT=null, demo=null;
+function caption(text){
+  if(STAGE) $('stagecap').textContent=text||`${$('avatar').value} · ${$('bg').value}`
+    +(BOT?'':' (preview: no bot in a meeting)');
+}
+function sync(){                             // the selection -> card rings, the stage, the caption
+  if(!STAGE) return;
+  const now={avatar:$('avatar').value,bg:$('bg').value};
+  document.querySelectorAll('.card').forEach(b=>b.classList.toggle('sel',b.dataset.name===now[b.dataset.kind]));
+  STAGE.__vexaCam.hud(now); caption();
+}
+function stopdemo(){
+  if(demo){clearInterval(demo);demo=null}
+  if(STAGE) STAGE.__vexaCam.hud({speaking:false,windingUp:false});
+}
+// What the bot does for real, replayed on the stage with sample text: lines arriving (listening),
+// then a wind-up and speech with a moving level, which is where the characters differ most.
+function preview(kind,name){
+  if(!STAGE) return;
+  stopdemo();
+  const hud=STAGE.__vexaCam; hud.hud({[kind]:name});
+  caption(`previewing ${name} · ${ABOUT[name]||kind}`);
+  let k=0;
+  const tick=()=>{                           // 60ms a tick: ~2.6s listening, then ~2.6s speaking
+    const j=k%44;
+    if(Math.floor(k/44)%2===0){
+      if(j===0) hud.hud({speaking:false,windingUp:false});
+      if(j===4||j===26) hud.hud({speaker:'Sample',line:SAMPLE[Math.floor(k/22)%SAMPLE.length]});
+    }else if(j===0) hud.hud({windingUp:true});
+    else if(j>6) hud.hud({speaking:true,windingUp:false,
+                          amplitude:0.04+0.3*Math.abs(Math.sin(j/2.3))*Math.abs(Math.sin(j/9))});
+    k++;
+  };
+  tick(); demo=setInterval(tick,60);
+}
+function unpreview(){stopdemo();sync()}
+// Switching is live on the bot: it is HUD state on a canvas Meet is already publishing.
+function pick(kind,name){$(kind).value=name;stopdemo();sync();if(BOT)cam()}
+function cards(host,kind,names,thumbs){
+  host.innerHTML=names.map((n,i)=>`<button class=card data-kind=${kind} data-name="${n}" title="${ABOUT[n]||n}">`
+    +`<img alt="" src="${thumbs[i]}"><span>${n}</span></button>`).join('');
+  host.querySelectorAll('.card').forEach(b=>{
+    b.onclick=()=>pick(kind,b.dataset.name);
+    b.onmouseenter=b.onfocus=()=>preview(kind,b.dataset.name);
+    b.onmouseleave=b.onblur=unpreview;
+  });
+}
+async function initpicker(){
+  try{
+    // A grid tile is slightly taller than wide, and Meet crops the 16:9 canvas to it: the stage
+    // shows the same central band, so nothing appears here that the meeting would crop away.
+    const stage=await hudframe($('stage'),'height:100%;left:50%;transform:translateX(-50%)',false);
+    const hud=stage.__vexaCam, avs=hud.avatars(), bgs=hud.backgrounds();
+    // The HUD's own registries are the list; names hardcoded on this page could drift from them.
+    for(const [id,names] of [['avatar',avs],['bg',bgs]]){
+      const cur=$(id).value; $(id).innerHTML=names.map(n=>`<option>${n}</option>`).join('');
+      if(names.includes(cur)) $(id).value=cur;
+    }
+    const at=[], bt=[], bare=avs.includes('none')?'none':avs[0];
+    for(const a of avs) at.push(await thumb(a,bgs[0],[420,232,440,440],false));   // close on the face
+    for(const b of bgs) bt.push(await thumb(bare,b,[280,0,720,720],true));        // the whole tile
+    cards($('avcards'),'avatar',avs,at); cards($('bgcards'),'bg',bgs,bt);
+    $('picker').style.display=''; $('avatar').style.display=$('bg').style.display='none';
+    STAGE=stage; sync();
+  }catch(e){
+    $('log').textContent='camera picker unavailable ('+e.message+'), using the plain lists\\n'+$('log').textContent;
+  }
+}
 
 async function post(path,body){
   const r=await fetch(path,{method:'POST',body:JSON.stringify(body||{})});
@@ -165,6 +308,7 @@ const joinCode=c=>post('/join',{room:c}).then(refresh);
 async function refresh(){
   const s=await (await fetch('/state')).json();
   const live=s.status==='active';
+  BOT=s.bot; if(!demo) caption();
   $('status').innerHTML=`<span class=dot style="background:${live?'#7ce38b':'#ff7b72'}"></span>`
     +(s.bot?`bot ${s.bot} · ${s.room} · ${s.status}`:'no bot in a meeting')
     +(s.camera?' · camera on':'')+(s.presenting?' · presenting':'');
@@ -208,7 +352,7 @@ async function sttpick(){
   sttset(sel.value);
 }
 function sttinstall(){ $('sttinstall').disabled=true; sttset(STT.recommended); }
-refresh(); upcoming(); stt(); setInterval(refresh,5000); setInterval(upcoming,120000); setInterval(stt,2000);
+refresh(); upcoming(); stt(); initpicker(); setInterval(refresh,5000); setInterval(upcoming,120000); setInterval(stt,2000);
 </script>"""
 
 
@@ -256,6 +400,13 @@ def upcoming_events(hours=12):
                         "when": start.astimezone().strftime("%H:%M"),
                         "soon": mins <= 10})
     return sorted(out, key=lambda x: x["when"])[:8]
+
+
+def sfx_names():
+    """Buttons only for effects that exist. SFX also names five with no file in shims/sfx; a button
+    for one of those posts a speak act that the TTS shim can only answer with a 404."""
+    have = sorted(p.stem for p in (HERE / "shims" / "sfx").glob("*.wav"))
+    return ([s for s in SFX if s in have] + [s for s in have if s not in SFX]) if have else SFX
 
 
 def stt(path, body=None):
@@ -326,6 +477,14 @@ class H(BaseHTTPRequestHandler):
             return self._send(json.dumps(st), "application/json")
         if self.path == "/stt":
             return self._send(json.dumps(stt("/models")), "application/json")
+        if self.path.startswith("/hud.mjs"):
+            # The compiled module the bot itself runs (hotswap.sh rewrites it), so the console's
+            # camera previews are drawn by the same code as the meeting tile.
+            try:
+                js = (HERE / "live" / "services-bot-dist" / "camera.js").read_bytes()
+            except OSError:
+                js = b"throw new Error('live/services-bot-dist/camera.js is missing: run ./populate-live.sh')"
+            return self._send(js, "text/javascript", raw=True)
         if self.path == "/upcoming":
             try:
                 return self._send(json.dumps(upcoming_events()), "application/json")
@@ -343,7 +502,7 @@ class H(BaseHTTPRequestHandler):
                 return self._send(open("/tmp/board-shot.png", "rb").read(), "image/png", raw=True)
             except OSError:
                 return self._send(b"", "image/png", raw=True)
-        page = (PAGE.replace("SFX_", json.dumps(SFX)).replace("EMOJI_", json.dumps(EMOJI))
+        page = (PAGE.replace("SFX_", json.dumps(sfx_names())).replace("EMOJI_", json.dumps(EMOJI))
                     .replace("AVATARS_", json.dumps(AVATARS))
                     .replace("BACKGROUNDS_", json.dumps(BACKGROUNDS))
                     .replace("PRESETS_", json.dumps(PRESETS)))
