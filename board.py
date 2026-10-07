@@ -112,10 +112,11 @@ PAGE = """<!doctype html><meta charset=utf-8><title>Vexa console</title>
 capture is patched out of the path entirely. Presenting a real page is issue #7.</div>
 
 <h2>live transcript</h2>
-<div class=row style="align-items:center;margin-bottom:8px">
+<div class=row style="align-items:center;margin-bottom:6px">
   <select id=sttmodel onchange=sttpick() title="local Whisper model used for transcription"></select>
-  <span id=sttstatus style="font:13px ui-monospace,monospace;color:#8a8aa0"></span>
+  <button id=sttinstall class=go style=display:none onclick=sttinstall()></button>
 </div>
+<div id=sttstatus style="font:13px ui-monospace,monospace;color:#8a8aa0;margin-bottom:8px"></div>
 <div id=tx></div>
 
 <h2>what the bot sees</h2>
@@ -173,10 +174,15 @@ async function refresh(){
 }
 // Transcription model. Picking one that is not on disk downloads it first, so each option says
 // how big it is and the pick asks before fetching. The loaded model keeps transcribing meanwhile.
-let STT={};
+let STT={}, sttnote='';
 async function stt(){
   STT=await (await fetch('/stt')).json();
-  const sel=$('sttmodel'), a=STT.activity, target=a?a.name:STT.current;
+  const sel=$('sttmodel'), a=STT.activity, target=a?a.name:STT.current, ms=STT.models||[];
+  // Nothing on disk yet: offer the recommended model as one click. The button states the size and
+  // the line under it states the file and where it comes from, so the click itself is the consent.
+  const rec=ms.find(m=>m.name===STT.recommended), bare=!!rec&&!a&&!ms.some(m=>m.installed);
+  $('sttinstall').style.display=bare?'':'none'; $('sttinstall').disabled=false;
+  if(bare) $('sttinstall').textContent=`Install ${rec.name} · ${rec.size_mb} MB`;
   if(document.activeElement!==sel){
     sel.innerHTML=(target?'':'<option value="" disabled selected>choose a model…</option>')
       +(STT.models||[]).map(m=>`<option value="${m.name}"${m.name===target?' selected':''}>`
@@ -185,15 +191,23 @@ async function stt(){
   }
   $('sttstatus').textContent=!STT.models?'local transcription is not running — ./pc up'
     :a?(a.kind==='downloading'?`downloading ${a.name} ${Math.floor(a.done*100/a.total)}%`:`loading ${a.name}…`)
-    :(STT.current?`transcribing on this Mac with ${STT.current}`:'no model loaded')
-      +(STT.error?` — ${STT.error}`:'');
+    :(bare?`no transcription model on this Mac yet — Install downloads ${rec.file} from ${STT.source} and loads it; or choose another`
+      :STT.current?`transcribing on this Mac with ${STT.current}`:'no model loaded')
+      +(sttnote||STT.error?` — ${sttnote||STT.error}`:'');
+}
+// A refusal (not enough disk, another download running) comes back as the reply text; keep it
+// beside the control instead of only in the log at the foot of the page.
+async function sttset(name){
+  const t=await post('/stt',{name});
+  sttnote=t.startsWith('transcription model ->')?'':t; stt();
 }
 async function sttpick(){
   const sel=$('sttmodel'), m=(STT.models||[]).find(x=>x.name===sel.value);
   sel.blur();
   if(m&&!m.installed&&!confirm(`Download ${m.file} (${m.size_mb} MB) from ${STT.source}?`)) return stt();
-  await post('/stt',{name:sel.value}); stt();
+  sttset(sel.value);
 }
+function sttinstall(){ $('sttinstall').disabled=true; sttset(STT.recommended); }
 refresh(); upcoming(); stt(); setInterval(refresh,5000); setInterval(upcoming,120000); setInterval(stt,2000);
 </script>"""
 

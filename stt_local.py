@@ -190,6 +190,7 @@ class Engine:
             "activity": a, "error": self.error,
             "free_gb": round(shutil.disk_usage(MODELS).free / 1e9, 1),
             "source": SOURCE.split("//", 1)[-1].split("/resolve", 1)[0],
+            "recommended": DEFAULT,   # what the console's one-click install fetches
             "stats": self.stats,
             "models": [{"name": n, "file": f"ggml-{n}.bin", "size_mb": round(b / 1e6),
                         "note": note, "installed": installed(n)} for n, b, _, note in CATALOG],
@@ -312,11 +313,12 @@ def serve():
     MODELS.mkdir(parents=True, exist_ok=True)
     # A whisper-server orphaned by a killed run would hold the port and fail the next start.
     subprocess.run(["pkill", "-f", f"whisper-server .*--port {ENGINE_PORT}"], capture_output=True)
+    # The last selection if it is still on disk, else any installed model. With none installed the
+    # service still comes up: the console then offers a one-click install.
     want = SELECTED.read_text().strip() if SELECTED.exists() else DEFAULT
-    if want in BY_NAME and installed(want):
-        threading.Thread(target=ENGINE.select, args=(want,), daemon=True).start()
-    else:
-        ENGINE.error = "no model installed yet — pick one in the console"
+    have = [n for n in [want, *BY_NAME] if n in BY_NAME and installed(n)]
+    if have:
+        threading.Thread(target=ENGINE.select, args=(have[0],), daemon=True).start()
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
 
     def shutdown(*_):
@@ -345,6 +347,8 @@ def show(s):
     line = f"{s['state']}: {s['current'] or '-'}"
     if a and a["kind"] == "downloading":
         line = f"downloading {a['name']} {a['done'] * 100 // a['total']}%"
+    if not a and not any(m["installed"] for m in s["models"]):
+        line = f"no model installed — ./pc model {s['recommended']}, or use the console's install button"
     print(line + (f"   ({s['error']})" if s.get("error") else ""))
     for m in s["models"]:
         mark = "*" if m["name"] == s["current"] else " "
