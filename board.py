@@ -17,7 +17,7 @@ that never played.
 Deliberately has no auth: it is bound to localhost and it can make a bot join a meeting, so do NOT
 expose it to the network.
 """
-import json, pathlib, re, subprocess, time, urllib.error, urllib.request
+import json, pathlib, re, subprocess, time, urllib.error, urllib.parse, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 CONTAINER = "vexa-rig-vexa-lite-1"
@@ -98,6 +98,7 @@ PAGE = r"""<!doctype html><meta charset=utf-8><title>Port Call</title>
  .ev.note .body{color:var(--dim);font-size:13px} .ev.pending .body{color:var(--dim)} .ev.bad .body small{color:var(--bad)}
  .ev .quote{margin:4px 0 0 10px;padding-left:10px;border-left:2px solid var(--line);color:var(--dim);font-size:13px}
  #empty{color:var(--faint);padding:20px 0;text-align:center}
+ #more{color:var(--faint);font-size:12px;text-align:center;padding:4px 0 10px;cursor:pointer}
  #jump{position:absolute;right:16px;bottom:14px;display:none;background:#1f3b63;border:1px solid #2d5a97}
 
  /* the bot's look */
@@ -269,6 +270,7 @@ function render(s){
   $('leave').style.display=m==='call'?'':'none'; $('lookbtn').style.display=m==='call'?'':'none';
   if(m==='call'&&prev!=='call'){ $('say').focus(); document.body.classList.remove('look'); }
   PRESENTING=!!s.presenting; $('present').textContent=PRESENTING?'Stop presenting':'Present the tile';
+  newMeeting(s); settle(s);
   readiness(s.health); lobby(s); joiningView(s); timeline(s); caption();
 }
 function readiness(h){
@@ -320,20 +322,51 @@ function joiningView(s){
 }
 async function joinShot(){ await fetch('/shot',{method:'POST'}); const i=$('joinshot'); i.style.display='block'; i.src='/shot.png?'+Date.now(); }
 
-// The conversation: the room's words and the bot's deeds in one thread, by time.
-let lastKey='';
-function timeline(s){
+// The conversation: the room's words and the bot's deeds in one thread, by time. The whole
+// meeting, loaded backwards: /state sends everything from FLOOR on, and scrolling to the top pages
+// in what came before TOP (the oldest item loaded) from /history into OLD. When the live part
+// grows long its head moves into OLD and FLOOR advances, so each poll stays small.
+let lastKey='', FLOOR=null, TOP=null, OLDER=0, OLD={transcript:[],events:[]}, OLDBOT=null, loading=false;
+function newMeeting(s){
+  if(s.bot===OLDBOT||!s.bot) return;
+  OLDBOT=s.bot; FLOOR=TOP=null; OLDER=0; OLD={transcript:[],events:[]}; lastKey='';
+}
+function settle(s){
+  if(s.floor==null) return;
+  if(FLOOR==null){FLOOR=TOP=s.floor; OLDER=s.older}
+  const live=[...(s.transcript||[]),...(s.events||[])].map(i=>i.t).sort((a,b)=>a-b);
+  if(live.length>300){                                  // retire the head of the live part
+    const f=live[live.length-100];
+    OLD.transcript.push(...s.transcript.filter(l=>l.t<f)); OLD.events.push(...s.events.filter(e=>e.t<f));
+    FLOOR=f;
+    s.transcript=s.transcript.filter(l=>l.t>=f); s.events=s.events.filter(e=>e.t>=f);
+  }
+}
+async function loadOlder(){
+  if(loading||!OLDER||TOP==null) return;
+  loading=true;
+  try{
+    const h=await (await fetch('/history?before='+TOP)).json(), tl=$('timeline'), was=tl.scrollHeight;
+    OLD.transcript.unshift(...h.transcript); OLD.events.unshift(...h.events);
+    OLDER=h.older; TOP=h.floor; lastKey='';
+    timeline(S, true); tl.scrollTop+=tl.scrollHeight-was;   // keep the reader where they were
+  }finally{loading=false}
+}
+function timeline(s, keep){
   const items=[];
-  for(const l of s.transcript||[]) items.push({t:l.t,html:`<span class=who>${esc(l.speaker)}</span>${esc(l.text)}`,cls:''});
-  for(const e of s.events||[]) items.push(botItem(e));
+  for(const l of [...OLD.transcript,...(s.transcript||[])]) items.push({t:l.t,html:`<span class=who>${esc(l.speaker)}</span>${esc(l.text)}`,cls:''});
+  for(const e of [...OLD.events,...(s.events||[])]) items.push(botItem(e));
   for(const p of s.pending||[]) items.push({t:p.t,cls:'bot pending',html:`<span class=who>${BOT_NAME}</span>${pendingText(p)}`});
   items.sort((a,b)=>a.t-b.t);
-  const key=items.map(i=>i.t+i.cls+i.html.length).join('|');
+  const key=OLDER+'#'+items.map(i=>i.t+i.cls+i.html.length).join('|');
   if(key===lastKey) return; lastKey=key;
-  const tl=$('timeline'), stick=tl.scrollHeight-tl.scrollTop-tl.clientHeight<80;
-  tl.innerHTML=items.length?items.map(i=>`<div class="ev ${i.cls}"><time>${hhmm(i.t)}</time><div class=body>${i.html}</div></div>`).join('')
+  const tl=$('timeline'), stick=!keep&&tl.scrollHeight-tl.scrollTop-tl.clientHeight<80;
+  const more=OLDER?`<div id=more onclick=loadOlder()>${OLDER} earlier — scroll up or click to load</div>`:'';
+  tl.innerHTML=items.length?more+items.map(i=>`<div class="ev ${i.cls}"><time>${hhmm(i.t)}</time><div class=body>${i.html}</div></div>`).join('')
     :'<div id=empty>Nothing yet — when people speak, it shows up here, and so does what the bot does.</div>';
+  if(keep) return;
   if(stick) tl.scrollTop=tl.scrollHeight; else $('jump').style.display='block';
+  if(OLDER&&tl.scrollHeight<=tl.clientHeight) loadOlder();  // nothing to scroll yet: fill the view
 }
 function pendingText(p){
   const a=p.act||{}, tail=p.stale?' <small>no reply from the bot yet</small>':'';
@@ -358,7 +391,7 @@ function botItem(e){
   return {t:e.t,cls,html};
 }
 function jumpdown(){const tl=$('timeline');tl.scrollTop=tl.scrollHeight;$('jump').style.display='none'}
-$('timeline').addEventListener('scroll',()=>{const tl=$('timeline'); if(tl.scrollHeight-tl.scrollTop-tl.clientHeight<80)$('jump').style.display='none'});
+$('timeline').addEventListener('scroll',()=>{const tl=$('timeline'); if(tl.scrollHeight-tl.scrollTop-tl.clientHeight<80)$('jump').style.display='none'; if(tl.scrollTop<200)loadOlder()});
 
 // ── the bot's tile: previews drawn by the bot's own HUD code ─────────────────────────────────
 // /hud.mjs is the compiled module the bot runs, so a card shows what the meeting tile will show,
@@ -462,7 +495,7 @@ async function initpicker(){
 }
 
 async function refresh(){
-  try{ render(await (await fetch('/state')).json()); }
+  try{ render(await (await fetch('/state'+(FLOOR!=null?'?floor='+FLOOR:''))).json()); }
   catch(e){ $('dot').className='dot badd'; $('phase').textContent='Console unreachable'; $('sub').textContent=''; }
 }
 refresh(); initpicker();
@@ -509,15 +542,16 @@ def running():
     return r[0] if r else None
 
 
-def transcript(code, n=80):
+def transcript(code):
     """Completed segments only: vexa resubmits each utterance as a growing window, so provisional
-    ones would rewrite the same sentence half a dozen times. `start` is epoch seconds."""
+    ones would rewrite the same sentence half a dozen times. `start` is epoch seconds. The whole
+    meeting: the page asks for a window of it (window())."""
     try:
         segs = gw(f"/transcripts/google_meet/{code}", "tx").get("segments") or []
     except Exception:
         return []
     return [{"t": s.get("start") or 0, "speaker": s.get("speaker") or "?", "text": (s.get("text") or "").strip()}
-            for s in segs if s.get("completed") and (s.get("text") or "").strip()][-n:]
+            for s in segs if s.get("completed") and (s.get("text") or "").strip()]
 
 
 def docker(*args, timeout=10):
@@ -540,7 +574,6 @@ def bot_log(mid):
         ev = fact(line, now)
         if ev:
             EVENTS.append(ev)
-    del EVENTS[:-200]
 
 
 def last_event(kind):
@@ -644,7 +677,32 @@ def stt(path, body=None):
         return {"state": "off"}
 
 
-def state():
+# The page shows the whole meeting but does not re-send it every poll: /state carries everything
+# from a floor time the page pins (the last TAIL items when it has none yet), and /history pages
+# backwards from there as the page is scrolled up.
+TAIL = 100
+
+
+def window(transcript, events, floor=None, before=None, n=TAIL):
+    """Items with floor <= t (< before); with no floor, the last n of them. Returns the slices,
+    the floor used, and how many items are older than it."""
+    ts = sorted([l["t"] for l in transcript] + [e["t"] for e in events])
+    if before is not None:
+        ts = [t for t in ts if t < before]
+    if floor is None:
+        floor = ts[-n] if len(ts) >= n else (ts[0] if ts else 0)
+    keep = lambda t: t >= floor and (before is None or t < before)
+    return ([l for l in transcript if keep(l["t"])], [e for e in events if keep(e["t"])],
+            floor, sum(t < floor for t in ts))
+
+
+def history(code, before):
+    """The page of the timeline just before `before` (the page's oldest item)."""
+    tr, ev, floor, older = window(transcript(code) if code else [], EVENTS, before=before)
+    return {"transcript": tr, "events": ev, "floor": floor, "older": older}
+
+
+def state(floor=None):
     st = {"phase": "none", "bot": None, "room": None, "since": None, "joined_at": None, "camera": None,
           "presenting": None, "failure": None, "last_room": CACHE["last_room"], "transcript": [],
           "events": [], "pending": []}
@@ -681,7 +739,7 @@ def state():
     for p in PENDING:
         p["stale"] = now - p["t"] > 20
     st["pending"] = PENDING[-10:]
-    st["events"] = EVENTS[-120:]
+    st["transcript"], st["events"], st["floor"], st["older"] = window(st["transcript"], EVENTS, floor)
     st["health"] = health
     return st
 
@@ -699,8 +757,12 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
 
     def do_GET(self):
-        if self.path == "/state":
-            return self._send(json.dumps(state()), "application/json")
+        url = urllib.parse.urlsplit(self.path)
+        q = {k: float(v[0]) for k, v in urllib.parse.parse_qs(url.query).items() if k in ("floor", "before")}
+        if url.path == "/state":
+            return self._send(json.dumps(state(q.get("floor"))), "application/json")
+        if url.path == "/history":
+            return self._send(json.dumps(history(LAST["code"], q.get("before", time.time()))), "application/json")
         if self.path.startswith("/hud.mjs"):
             # The compiled module the bot itself runs (hotswap.sh rewrites it), so the console's
             # camera previews are drawn by the same code as the meeting tile.
