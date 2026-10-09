@@ -43,6 +43,7 @@ redis-cli PUBLISH bot_commands:meeting:42 '{"action":"reaction","emoji":"🎉"}'
 | Emoji reactions | Meet's reaction picker | ✅ |
 | Camera | canvas → `getUserMedia` patch → a live HUD + animated avatar | ✅ |
 | Screenshare | the same canvas → `getDisplayMedia` patch | ✅ |
+| Opt out of the transcript | `opt-out` / `opt-out 2` / `opt-in` typed in the Meet chat | ✅ logic; ⏳ real Meet |
 
 ## Architecture
 

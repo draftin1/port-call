@@ -114,6 +114,8 @@ PAGE = r"""<!doctype html><meta charset=utf-8><title>Port Call</title>
  footer{flex:none;border-top:1px solid var(--line);background:#0e0e15;padding:10px 16px;display:none}
  footer .row+.row{margin-top:8px}
  #toast{font:13px var(--mono);color:var(--dim);margin-top:8px;min-height:16px;white-space:pre-wrap}
+ footer .hint{font-size:12px;color:var(--faint);margin-top:8px} footer .hint b{color:var(--dim);font-weight:500}
+ #sub[title]{cursor:help}
  details{padding:4px 16px 10px;color:var(--faint);font-size:12px} details pre{max-height:140px;overflow:auto;margin:6px 0 0;white-space:pre-wrap}
 
  main[data-mode=lobby] #timeline,main[data-mode=lobby] #joining,main[data-mode=joining] #timeline,
@@ -199,6 +201,7 @@ PAGE = r"""<!doctype html><meta charset=utf-8><title>Port Call</title>
     <button class=ghost onclick="act({action:'chat_read'})">Read chat</button>
     <span class=row id=emorow></span>
   </div>
+  <div class=hint>Anyone in the call can type <b>opt-out</b> in the Meet chat to keep their words out of the transcript, <b>opt-out 2</b> to keep their name out too, <b>opt-in</b> to undo it.</div>
   <div id=toast></div>
 </footer>
 <details><summary>raw responses</summary><pre id=log></pre></details>
@@ -262,8 +265,10 @@ function render(s){
   S=s; BOT=s.bot;
   const [cls,title,sub]=PHASES[s.phase]||PHASES.none, m=mode(s.phase);
   $('dot').className='dot '+cls; $('phase').textContent=title;
+  const oo=s.optouts||{}, named=oo.named||[], nout=named.length+(oo.unnamed||0);
   $('sub').textContent=s.phase==='active'?s.room+(s.presenting?' · presenting':'')+(s.camera===false?' · camera off':'')
-    :(s.room&&m!=='lobby'?`${s.room} · ${sub}`:sub);
+    +(nout?` · ${nout} opted out`:''):(s.room&&m!=='lobby'?`${s.room} · ${sub}`:sub);
+  if(nout) $('sub').title=[...named,...(oo.unnamed?[`${oo.unnamed} without a name`]:[])].join(', '); else $('sub').removeAttribute('title');
   $('elapsed').textContent=s.phase==='active'&&s.since?mmss(Date.now()/1000-s.since):'';
   const prev=document.body.dataset.mode;
   document.body.dataset.mode=$('main').dataset.mode=m;
@@ -327,6 +332,8 @@ async function joinShot(){ await fetch('/shot',{method:'POST'}); const i=$('join
 // in what came before TOP (the oldest item loaded) from /history into OLD. When the live part
 // grows long its head moves into OLD and FLOOR advances, so each poll stays small.
 let lastKey='', FLOOR=null, TOP=null, OLDER=0, OLD={transcript:[],events:[]}, OLDBOT=null, loading=false;
+// The transcript lines the bot writes when someone opts out or back in (optout.ts MARKER).
+const MARKER=/^\(opted (out of|back into) the transcript\)$/;
 function newMeeting(s){
   if(s.bot===OLDBOT||!s.bot) return;
   OLDBOT=s.bot; FLOOR=TOP=null; OLDER=0; OLD={transcript:[],events:[]}; lastKey='';
@@ -354,7 +361,7 @@ async function loadOlder(){
 }
 function timeline(s, keep){
   const items=[];
-  for(const l of [...OLD.transcript,...(s.transcript||[])]) items.push({t:l.t,html:`<span class=who>${esc(l.speaker)}</span>${esc(l.text)}`,cls:''});
+  for(const l of [...OLD.transcript,...(s.transcript||[])]) items.push({t:l.t,html:`<span class=who>${esc(l.speaker)}</span>${esc(l.text)}`,cls:MARKER.test(l.text)?'note':''});
   for(const e of [...OLD.events,...(s.events||[])]) items.push(botItem(e));
   for(const p of s.pending||[]) items.push({t:p.t,cls:'bot pending',html:`<span class=who>${BOT_NAME}</span>${pendingText(p)}`});
   items.sort((a,b)=>a.t-b.t);
@@ -512,6 +519,7 @@ LAST = {"id": None, "code": None, "status": None, "active_at": None, "joined_at"
 EVENTS, PENDING = [], []
 CURSOR = {}            # bot id -> log lines already parsed
 SELFCHECK = {}         # last [selfcheck] per bot id
+OPTOUT = {}            # last [optout] roster per bot id: names at level 1, a count at level 2
 CACHE = {"tts_t": 0, "tts": None, "last_room": None}
 EVENT_RE = {
     "speak": re.compile(r'^\[bot\] speak: "(.*)"$'),
@@ -570,6 +578,16 @@ def bot_log(mid):
                 SELFCHECK[mid] = json.loads(line[12:])
             except ValueError:
                 pass
+            continue
+        if line.startswith("[optout] {"):
+            # The bot writes the whole roster each time, so the latest line is the state; a note
+            # rides along only for what the transcript itself cannot show (a level-2 opt-out).
+            try:
+                OPTOUT[mid] = j = json.loads(line[9:])
+            except ValueError:
+                continue
+            if j.get("note"):
+                EVENTS.append({"kind": "note", "text": j["note"], "t": now})
             continue
         ev = fact(line, now)
         if ev:
@@ -726,7 +744,7 @@ def state(floor=None):
         sc = SELFCHECK.get(b["id"], {})
         st.update(phase=b["status"], bot=b["id"], room=b["native_meeting_id"], since=LAST["active_at"],
                   joined_at=LAST["joined_at"], camera=sc.get("cameraOn"), presenting=sc.get("presenting"),
-                  transcript=transcript(b["native_meeting_id"]))
+                  transcript=transcript(b["native_meeting_id"]), optouts=OPTOUT.get(b["id"], {}))
     elif LAST["id"] and not LAST["ended"]:
         LAST["ended"] = now
         bot_log(LAST["id"])                            # the leave reason lands after the bot is gone

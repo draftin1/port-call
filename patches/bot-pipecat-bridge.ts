@@ -28,6 +28,7 @@ import { isHallucination } from '@vexa/gmeet-pipeline';
 import type { TranscriptSegment } from './contracts.js';
 import type { BotPipeline } from './pipeline.js';
 import type { TranscriptSink } from './ports.js';
+import { claims } from './optout.js';
 
 interface Channel {
   ws: any | null;
@@ -55,12 +56,16 @@ export function createPipecatBotPipeline(
   const log = (m: string): void => console.log(`[bot] [pipecat] ${m}`);
   let stopped = false;
 
-  /** The tile lit for most of [t0, t1]; failing that the last one seen on this stream. */
+  /** The tile lit for most of [t0, t1]; failing that the last one seen on this stream. An
+   *  opted-out tile lit at any point in the span takes it instead, so the sink drops the whole
+   *  utterance: when two people overlap, the doubt goes against keeping it (optout.ts). */
   const speakerFor = (c: Channel, t0: number, t1: number): string => {
     const votes = new Map<string, number>();
     for (const n of c.names) {
       if (n.t >= t0 - 300 && n.t <= t1 + 300) votes.set(n.name, (votes.get(n.name) ?? 0) + 1);
     }
+    const out = claims(votes.keys());
+    if (out) return out;
     let best = '', top = 0;
     for (const [name, v] of votes) if (v > top) { best = name; top = v; }
     return best || c.lastName || 'Speaker';

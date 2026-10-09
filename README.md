@@ -30,6 +30,7 @@ live in **[docs/findings.md](docs/findings.md)**.
 | Emoji reactions | Meet's reaction picker | ✅ |
 | Camera | canvas → `getUserMedia` patch → a live HUD + animated avatar | ✅ |
 | Screenshare | the same canvas → `getDisplayMedia` patch | ✅ presenting confirmed in DOM |
+| Opt out of the transcript | someone types `opt-out` (words cut) or `opt-out 2` (name too) in the Meet chat; `opt-in` undoes it | ✅ logic; ⏳ real Meet |
 
 The camera is a **selectable character over a selectable background** — three of each, independent,
 so any avatar goes on any background:
