@@ -48,6 +48,15 @@ export function installHud(): void {
     for (let i = 0; i < x.length; i++) h = (h * 31 + x.charCodeAt(i)) | 0;
     return h;
   };
+  // Each person's name has one colour, the same on this tile and in the console, which is why it
+  // is a function of the name alone: the two never compare notes, so nothing stateful (first
+  // come, first colour) could agree across them. Twelve hues, neighbours in the list far apart
+  // on the wheel, at one lightness so every one reads on the dark tile. The console carries a
+  // copy for the moments before this module has loaded there, and prefers this one after.
+  const SPEAKER_HUES = [130, 215, 330, 48, 185, 270, 95, 20, 300, 160, 240, 0];
+  const speakerColor = (name: any, alpha: any = 1) =>
+    'hsla(' + SPEAKER_HUES[Math.abs(hashStr(String(name || '').trim().toLowerCase())) % SPEAKER_HUES.length]
+    + ',65%,70%,' + alpha + ')';
   // Wrap/clip by MEASURED width against the visible band, not by character count. A character
   // budget tuned for the full 1280 canvas draws past the crop and is never seen: the 56px caption
   // wrapped at 30 chars (~930px) into a 560px band. Fixed 2026-08-21, after SAFE_W had already
@@ -745,7 +754,8 @@ export function installHud(): void {
   // which is why it is now one option rather than the only one.
   BACKGROUNDS.transcript = (t: any, state: any, hot: any) => {
     ctx.textAlign = 'center';
-    ctx.fillStyle = hot ? 'rgba(124,226,139,0.9)' : 'rgba(90,90,112,0.9)';
+    // The name in its own colour, the one the console shows it in; faded once they have gone quiet.
+    ctx.fillStyle = S.speaker ? speakerColor(S.speaker, hot ? 0.95 : 0.55) : 'rgba(90,90,112,0.9)';
     ctx.fillText(clipFit((S.speaker || 'listening…').toUpperCase(),
                          'bold 36px system-ui, sans-serif'), W / 2, 52);
 
@@ -800,7 +810,7 @@ export function installHud(): void {
     ctx.textAlign = 'left';
     ctx.fillStyle = 'rgba(255,255,255,0.30)'; ctx.font = '18px system-ui, sans-serif';
     ctx.fillText('SPEAKER', CX0, 258);
-    ctx.fillStyle = S.speaker ? '#ffffff' : dim; ctx.font = 'bold 30px system-ui, sans-serif';
+    ctx.fillStyle = S.speaker ? speakerColor(S.speaker) : dim; ctx.font = 'bold 30px system-ui, sans-serif';
     ctx.fillText(clipCol(S.speaker || 'nobody yet', 'bold 30px system-ui, sans-serif'), CX0, 296);
 
     // Outbound audio: the bar only moves when TTS PCM is actually flowing, so a dead speak path
@@ -1062,6 +1072,7 @@ export function installHud(): void {
     version: 'hud-v12-telepathy',
     avatars: () => Object.keys(AVATARS),
     backgrounds: () => Object.keys(BACKGROUNDS),
+    speakerColor,
     hud(patch: any) {
       // Validate here, not in draw(): an unknown name is a caller error and must surface at the
       // act that made it. Throwing names the valid set, because the failure people actually hit

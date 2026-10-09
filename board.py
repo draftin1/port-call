@@ -92,7 +92,7 @@ PAGE = r"""<!doctype html><meta charset=utf-8><title>Port Call</title>
  #timeline{flex:1;overflow:auto;padding:12px 16px 24px}
  .ev{display:grid;grid-template-columns:62px 1fr;gap:10px;padding:5px 0;align-items:baseline}
  .ev time{font:12px var(--mono);color:var(--faint);padding-top:2px}
- .ev .who{color:var(--good);font-weight:600;margin-right:6px}
+ .ev .who{color:var(--good);font-weight:600;margin-right:6px}   /* the green is for a name without a colour yet */
  .ev.bot .body{color:#ffd9a3} .ev.bot .who{color:var(--bot)}
  .ev.bot .body small,.ev .sub{display:block;color:var(--dim);font-size:13px}
  .ev.note .body{color:var(--dim);font-size:13px} .ev.pending .body{color:var(--dim)} .ev.bad .body small{color:var(--bad)}
@@ -334,6 +334,17 @@ async function joinShot(){ await fetch('/shot',{method:'POST'}); const i=$('join
 let lastKey='', FLOOR=null, TOP=null, OLDER=0, OLD={transcript:[],events:[]}, OLDBOT=null, loading=false;
 // The transcript lines the bot writes when someone opts out or back in (optout.ts MARKER).
 const MARKER=/^\(opted (out of|back into) the transcript\)$/;
+// A person's name is one colour here and on the bot's tile. The tile's own code decides it
+// (camera.ts speakerColor, reached through the stage once the HUD module has loaded); this copy
+// of the same function covers the first renders before then, and a page where it never loads.
+const SPEAKER_HUES=[130,215,330,48,185,270,95,20,300,160,240,0];
+function speakerColor(name){
+  if(STAGE&&STAGE.__vexaCam&&STAGE.__vexaCam.speakerColor) return STAGE.__vexaCam.speakerColor(name);
+  const x=String(name||'').trim().toLowerCase(); let h=0;
+  for(let i=0;i<x.length;i++) h=(h*31+x.charCodeAt(i))|0;
+  return `hsla(${SPEAKER_HUES[Math.abs(h)%SPEAKER_HUES.length]},65%,70%,1)`;
+}
+const who=n=>`<span class=who style="color:${speakerColor(n)}">${esc(n)}</span>`;
 function newMeeting(s){
   if(s.bot===OLDBOT||!s.bot) return;
   OLDBOT=s.bot; FLOOR=TOP=null; OLDER=0; OLD={transcript:[],events:[]}; lastKey='';
@@ -361,7 +372,7 @@ async function loadOlder(){
 }
 function timeline(s, keep){
   const items=[];
-  for(const l of [...OLD.transcript,...(s.transcript||[])]) items.push({t:l.t,html:`<span class=who>${esc(l.speaker)}</span>${esc(l.text)}`,cls:MARKER.test(l.text)?'note':''});
+  for(const l of [...OLD.transcript,...(s.transcript||[])]) items.push({t:l.t,html:who(l.speaker)+esc(l.text),cls:MARKER.test(l.text)?'note':''});
   for(const e of [...OLD.events,...(s.events||[])]) items.push(botItem(e));
   for(const p of s.pending||[]) items.push({t:p.t,cls:'bot pending',html:`<span class=who>${BOT_NAME}</span>${pendingText(p)}`});
   items.sort((a,b)=>a.t-b.t);
@@ -495,6 +506,7 @@ async function initpicker(){
     for(const b of bgs) bt.push(await thumb(bare,b,[280,0,720,720],true));
     cards($('avcards'),'avatar',avs,at); cards($('bgcards'),'bg',bgs,bt);
     STAGE=stage; sync();
+    lastKey=''; timeline(S);   // names take their colour from the tile's code from here on
   }catch(e){
     $('avatar').hidden=$('bg').hidden=false; $('stage').style.display='none';
     $('stagecap').textContent='preview unavailable ('+e.message+')';
