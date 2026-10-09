@@ -73,18 +73,53 @@ const openPanel = async (page: Page): Promise<void> => {
 // version read those attributes and returned NOTHING in production while passing a mock that
 // had invented them. So: take the container's text, minus the nested controls, because raw
 // textContent is "dom dump probeHover over a message to pin itkeepPin message".
+//
+// The SENDER is not on the message either (2026-10-09: every opt-out typed in a real call came
+// back with no sender, so none was applied). Meet groups a run of messages from one person under
+// a header, "Jonny Johnson 6:04 PM", that is a sibling of the rows, not an ancestor with an
+// attribute. So: try `data-sender-name` on an ancestor (older Meet), else climb to the first
+// ancestor that holds any text OUTSIDE the message rows (the group) and take that text, minus
+// the time. The bot's own messages have a header of time alone, which is how Meet marks "you":
+// stop there too, as "You", or the climb reaches the panel and returns every header in it (seen
+// live, 2026-10-09). A message whose sender still cannot be read carries `dom`, a sketch of its
+// ancestors, so the next failure is read off the log instead of guessed at again.
 const messages = (page: Page): Promise<ChatMessage[]> => page.evaluate(() => {
   const doc = (globalThis as any).document;
   const log = doc.querySelector('[role="log"], [aria-live="polite"]') || doc;
-  const out: Array<{ sender: string; text: string }> = [];
+  const out: Array<{ sender: string; text: string; dom?: string[] }> = [];
+  const clean = (t: string) => t.replace(/\s+/g, ' ').replace(/\s*\d{1,2}:\d{2}\s*(AM|PM)?\s*$/i, '').trim();
+  const outsideRows = (root: any, strip = true): string => {
+    const clone = root.cloneNode(true);
+    clone.querySelectorAll('[data-message-id],button,[role="button"],[aria-label]').forEach((e: any) => e.remove());
+    const t = (clone.textContent || '').replace(/\s+/g, ' ').trim();
+    return strip ? clean(t) : t;
+  };
+  const sketch = (node: any): string[] => {
+    const line = (e: any) => e.tagName.toLowerCase()
+      + Array.from(e.attributes as any[]).filter((at) => at.name !== 'class' && at.name !== 'style')
+          .map((at) => `[${at.name}=${String(at.value).slice(0, 24)}]`).join('')
+      + (e.childElementCount === 0 ? ' »' + (e.textContent || '').trim().slice(0, 40) : '');
+    const rows: string[] = [];
+    let cur = node.parentElement;
+    for (let i = 0; i < 5 && cur; i++, cur = cur.parentElement) {
+      rows.push(`^${i} ` + line(cur));
+      for (const c of Array.from(cur.children) as any[]) if (c !== node && !c.contains(node)) rows.push(`   · ` + line(c));
+    }
+    return rows;
+  };
   for (const node of Array.from(log.querySelectorAll('div[data-message-id]')) as any[]) {
     if (node.closest('button')) continue;              // the "keep" button carries the id too
     const clone = node.cloneNode(true) as any;
     clone.querySelectorAll('button,[role="button"],[aria-label]').forEach((b: any) => b.remove());
     const text = (clone.textContent || '').replace(/\s+/g, ' ').trim();
     if (!text) continue;
-    const holder = node.closest('[data-sender-name]');
-    out.push({ sender: (holder?.getAttribute('data-sender-name') || '').trim(), text });
+    let sender = (node.closest('[data-sender-name]')?.getAttribute('data-sender-name') || '').trim();
+    let cur = node.parentElement;
+    for (let i = 0; i < 6 && cur && !sender; i++, cur = cur.parentElement) {
+      const raw = outsideRows(cur, false);
+      if (raw) sender = clean(raw) || 'You';
+    }
+    out.push(sender ? { sender, text } : { sender, text, dom: sketch(node) });
   }
   return out;
 });
