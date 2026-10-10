@@ -13,7 +13,8 @@
 #   ./pc bench                   the no-meeting test suite
 #   ./pc <script.sh> [args]      any other repo script, same environment
 #
-# First run: copies .env.example to .env and fills live/ from the built image (a few minutes).
+# First run: copies .env.example to .env, fills live/ from the built image (a few minutes), and
+# builds the Pipecat environment with uv, installing uv itself if the machine has none.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -49,6 +50,25 @@ ensure_live() {
 
 load_env() { ensure_env; set -a; . ./.env; set +a; }
 
+# uv manages the one Python environment this needs (Pipecat's). The official installer puts it in
+# ~/.local/bin, which a shell opened before the install does not have on PATH yet, so look there.
+UV_INSTALL='curl -LsSf https://astral.sh/uv/install.sh | sh'
+have_uv() { command -v uv >/dev/null 2>&1 && return 0; [ -x "$HOME/.local/bin/uv" ] && { export PATH="$HOME/.local/bin:$PATH"; return 0; }; return 1; }
+ensure_uv() {
+  have_uv && return 0
+  echo "uv (Python package manager) is not installed; installing it to ~/.local/bin:  $UV_INSTALL"
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  have_uv || { echo "uv did not install — https://docs.astral.sh/uv/getting-started/installation/" >&2; return 1; }
+}
+# Python 3.12 pinned: the version this lane has run on. uv fetches it if the machine has none.
+PIPECAT_INSTALL="uv venv --python 3.12 .venv-pipecat && uv pip install --python .venv-pipecat/bin/python 'pipecat-ai[websocket]==1.12.0' uvicorn"
+ensure_pipecat() {
+  [ -x .venv-pipecat/bin/python ] && return 0
+  ensure_uv
+  echo "building the Pipecat environment, .venv-pipecat (once):  $PIPECAT_INSTALL"
+  uv venv -q --python 3.12 .venv-pipecat && uv pip install -q --python .venv-pipecat/bin/python 'pipecat-ai[websocket]==1.12.0' uvicorn
+}
+
 # What this machine must have, each with the line that installs it. Exit 1 if anything is missing.
 doctor() {
   local fail=0
@@ -78,8 +98,9 @@ doctor() {
     pass "transcription is not on this machine (TRANSCRIPTION_SERVICE_URL=${TRANSCRIPTION_SERVICE_URL:-unset})"
   fi
   if [ -n "${PIPECAT_URL:-}" ]; then
+    have_uv && pass "uv ($(command -v uv))" || miss "uv (Python package manager)" "$UV_INSTALL   (./pc up does this for you)"
     if [ -x .venv-pipecat/bin/python ]; then pass "Pipecat venv (.venv-pipecat)"
-    else miss "Pipecat venv (PIPECAT_URL is set)" "uv venv .venv-pipecat && uv pip install --python .venv-pipecat/bin/python 'pipecat-ai[websocket]==1.12.0' uvicorn    (no uv? pip install uv — or comment PIPECAT_URL out of .env)"; fi
+    else miss "Pipecat venv (PIPECAT_URL is set)" "$PIPECAT_INSTALL   (./pc up does this for you; or comment PIPECAT_URL out of .env)"; fi
   fi
   echo "ports (free, or already ours)"
   local p
@@ -104,7 +125,7 @@ case "${1:-}" in
     fi
     # The Pipecat lane, when .env selects it. Its environment is built once: see pipecat_local.py.
     if [ -n "${PIPECAT_URL:-}" ]; then
-      [ -x .venv-pipecat/bin/python ] || { echo "PIPECAT_URL is set but .venv-pipecat is missing — ./pc doctor says how" >&2; exit 1; }
+      ensure_pipecat
       up_on 8179 || { nohup .venv-pipecat/bin/python pipecat_local.py >/tmp/port-call-pipecat.log 2>&1 & echo "pipecat -> :8179"; }
     fi
     ./relaunch.sh

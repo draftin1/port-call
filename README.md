@@ -38,7 +38,9 @@ healthy when the pipeline isn't.
 You need **Docker** (Docker Desktop, OrbStack, or Docker Engine), **Python 3.10+**, and
 **whisper.cpp** for transcription on your machine (`brew install whisper-cpp` on macOS; elsewhere
 build [whisper.cpp](https://github.com/ggml-org/whisper.cpp) and put `whisper-server` on your
-PATH). Windows works through WSL.
+PATH). The Python environment for the audio lane is built for you with
+[uv](https://docs.astral.sh/uv/), which `./pc up` installs if you don't have it. Windows works
+through WSL.
 
 ```bash
 git clone https://github.com/amiller/port-call.git && cd port-call
