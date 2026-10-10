@@ -20,13 +20,29 @@ expose it to the network.
 import json, pathlib, re, subprocess, time, urllib.error, urllib.parse, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-CONTAINER = "vexa-rig-vexa-lite-1"
-GATEWAY = "http://localhost:8056"
+HERE = pathlib.Path(__file__).resolve().parent
+
+
+def dotenv():
+    """The settings compose reads, so the console names the same container and port it does."""
+    out = {}
+    try:
+        for line in (HERE / ".env").read_text().splitlines():
+            if "=" in line and not line.lstrip().startswith("#"):
+                k, v = line.split("=", 1)
+                out[k.strip()] = v.strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return out
+
+
+ENV = dotenv()
+CONTAINER = ENV.get("COMPOSE_PROJECT_NAME", "vexa-rig") + "-vexa-lite-1"
+GATEWAY = f"http://localhost:{ENV.get('VEXA_GW_PORT', '8056')}"
 # stt_local.py: transcription on this machine, and the one process that knows which Whisper model
 # is loaded. The console only relays to it.
 STT = "http://127.0.0.1:8177"
 TOKENS = {"bot": "/tmp/vexa-bot-token.txt", "tx": "/tmp/vexa-tx-token.txt"}   # minted by ./pc up
-HERE = pathlib.Path(__file__).resolve().parent
 BOT_NAME = "Port Call"
 SFX = ["airhorn", "gavel", "ding", "objection", "order", "noted", "correct", "welcome", "timesup"]
 # Meet's picker set VARIES by UI state — a dump taken while presenting showed 🎊 💗 💯 😆 🙁 😲,

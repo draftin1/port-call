@@ -28,8 +28,8 @@ redis-cli PUBLISH bot_commands:meeting:42 '{"action":"reaction","emoji":"🎉"}'
 # a 🎉 lands in the meeting
 ```
 
-[Source on GitHub](https://github.com/amiller/vexa-poc) ·
-[Issues](https://github.com/amiller/vexa-poc/issues)
+[Source on GitHub](https://github.com/amiller/port-call) ·
+[Issues](https://github.com/amiller/port-call/issues)
 
 ## What works
 
@@ -101,7 +101,7 @@ PulseAudio graph the Meet rig already uses.
 
 The lane is built and green. It establishes audio, control, and join; speaker attribution is
 untested because both seats are linked devices of one account. See
-[`signal-lane/`](https://github.com/amiller/vexa-poc/tree/main/signal-lane) for the full account.
+[`signal-lane/`](https://github.com/amiller/port-call/tree/main/signal-lane) for the full account.
 
 ## The documents
 
