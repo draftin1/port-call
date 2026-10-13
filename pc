@@ -26,10 +26,24 @@ room() { [ -s .room ] || { echo "no meeting yet — run: ./pc join <meet link|co
 # Docker: whichever engine answers. DOCKER_CONTEXT set by hand wins; then the CLI's current
 # context; then the engines a laptop commonly has, so a dead Docker Desktop with the stack
 # actually on OrbStack (or the reverse) does not read as "Docker is not running".
+#
+# Before "whichever answers": the engine .env names, then an engine already running this stack.
+# "Whichever answers" is the CLI's current context, and on a laptop with Docker Desktop AND
+# OrbStack both up, with the stack on OrbStack, that sent `./pc up` to Docker Desktop: it began a
+# second copy of the stack there, which died on the ports the real one holds, and `./pc down`
+# would have stopped nothing.
 engine() {
   [ -n "${DOCKER_CONTEXT:-}" ] && return 0
+  local c name
+  c=$(sed -n 's/^DOCKER_CONTEXT=//p' .env 2>/dev/null | tail -1)
+  if [ -n "$c" ]; then export DOCKER_CONTEXT=$c; return 0; fi
+  name=$(sed -n 's/^COMPOSE_PROJECT_NAME=//p' .env 2>/dev/null | tail -1); name=${name:-${PWD##*/}}
+  for c in $(docker context ls -q 2>/dev/null); do
+    if [ -n "$(DOCKER_CONTEXT=$c docker ps -q --filter "name=^${name}-vexa-lite-1\$" 2>/dev/null)" ]; then
+      export DOCKER_CONTEXT=$c; return 0
+    fi
+  done
   docker info >/dev/null 2>&1 && return 0
-  local c
   for c in orbstack desktop-linux colima default; do
     if DOCKER_CONTEXT=$c docker info >/dev/null 2>&1; then export DOCKER_CONTEXT=$c; return 0; fi
   done
