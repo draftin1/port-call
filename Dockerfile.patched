@@ -59,6 +59,7 @@ COPY patches/bot-index.ts /app/core/meetings/services/bot/src/index.ts
 # seeded FROM this image, and pipeline.ts imports the bridge, so one without the other fails tsc.
 COPY patches/bot-pipeline.ts /app/core/meetings/services/bot/src/pipeline.ts
 COPY patches/bot-pipecat-bridge.ts /app/core/meetings/services/bot/src/pipecat-bridge.ts
+COPY patches/bot-optout.ts /app/core/meetings/services/bot/src/optout.ts
 # 4. RECORDER CLOBBER (#16). Both the is_final chunk and close(key) assemble a master for the same
 #    key, and the second one — a lone trailing fragment, no EBML cluster, unrepairable — landed on
 #    the path the first had just written. Three of four meetings on 2026-08-12 lost their audio
