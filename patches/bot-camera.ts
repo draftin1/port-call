@@ -738,6 +738,117 @@ export function installHud(): void {
     ctx.restore();
   };
 
+  // Monkey — a brown monkey, front on, in the rooster's flat style, with the big pale muzzle and
+  // ear patches of a cartoon chimp. Its signals: the mouth opens with RMS amplitude (no idle
+  // floor), the ears angle forward and the brows lift while it is LISTENING, and the wind-up is a
+  // lip chatter. And one signal no other character has: while the bot is NOT collecting the
+  // room's sound (S.listening false), it covers its ears with its hands, hear-no-evil, with the
+  // eyes squeezed shut. The arms swing up over ~12 frames when that changes, so the gesture is
+  // seen to happen rather than appearing between one frame and the next.
+  let monkeyCover = 0;                         // 0 = hands down, 1 = ears covered
+  AVATARS.monkey = (cx: any, cy: any, sc: any, t: any, state: any) => {
+    const listening = state === 'listening';
+    const bob = Math.sin(t / (listening ? 7 : 15)) * (listening ? 9 : 4);
+    const sway = Math.sin(t / 33) * 0.05;
+    const blink = ((t + 60) % 240) < 8;
+    let mouth = 0;
+    if (state === 'winding-up') {
+      const windAge = t - S.windUpStart;
+      mouth = windAge < 30 ? Math.abs(Math.sin(windAge / 3)) * 6 : 0;
+    } else if (state === 'speaking') {
+      mouth = Math.min(S.amplitude * 120, 30);          // no idle floor — see rooster
+    }
+    monkeyCover += ((S.listening ? 0 : 1) - monkeyCover) * 0.18;
+    const cover = monkeyCover < 0.01 ? 0 : monkeyCover > 0.99 ? 1 : monkeyCover;
+    const perk = listening ? 8 : 0;
+    const FUR = '#7a4a2a', DARK = '#5c3519', SKIN = '#e7c39c', LINE = '#3b2214';
+
+    ctx.save();
+    ctx.translate(cx, cy + bob); ctx.rotate(sway); ctx.scale(sc, sc);
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+    // body with a pale chest, and the tail curling up on one side
+    ctx.strokeStyle = FUR; ctx.lineWidth = 22;
+    ctx.beginPath(); ctx.moveTo(-100, 236);
+    ctx.quadraticCurveTo(-200, 200 + Math.sin(t / 18) * 6, -170, 120 + Math.sin(t / 18) * 10); ctx.stroke();
+    ctx.fillStyle = FUR;
+    ctx.beginPath(); ctx.ellipse(0, 206, 140, 118, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = SKIN;
+    ctx.beginPath(); ctx.ellipse(0, 212, 76, 86, 0, 0, 7); ctx.fill();
+
+    // ears, with pale insides; they lean forward while listening
+    for (const side of [-1, 1]) {
+      ctx.fillStyle = FUR;
+      ctx.beginPath(); ctx.ellipse(side * 128, -28 - perk, 40, 46, side * -0.2, 0, 7); ctx.fill();
+      ctx.fillStyle = SKIN;
+      ctx.beginPath(); ctx.ellipse(side * 130, -28 - perk, 24, 30, side * -0.2, 0, 7); ctx.fill();
+    }
+
+    // head, brow ridge, and the big pale muzzle that goes up around the eyes
+    ctx.fillStyle = FUR;
+    ctx.beginPath(); ctx.ellipse(0, -30, 118, 112, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = SKIN;
+    ctx.beginPath(); ctx.moveTo(-88, -24);
+    ctx.quadraticCurveTo(-72, -96, -28, -76); ctx.quadraticCurveTo(0, -56, 28, -76);
+    ctx.quadraticCurveTo(72, -96, 88, -24); ctx.quadraticCurveTo(96, 70, 0, 86);
+    ctx.quadraticCurveTo(-96, 70, -88, -24); ctx.fill();
+
+    // eyes: open, following the room while listening; squeezed shut while covering the ears
+    const shut = cover > 0.5 || blink;
+    for (const ex of [-40, 40]) {
+      if (!shut) {
+        const look = listening ? Math.sin(t / 18) * 6 : 0;
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.ellipse(ex, -40, 22, 24, 0, 0, 7); ctx.fill();
+        ctx.fillStyle = '#2a160a';
+        ctx.beginPath(); ctx.arc(ex + look, -38, 12, 0, 7); ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(ex + look + 4, -43, 4, 0, 7); ctx.fill();
+      } else {
+        ctx.strokeStyle = LINE; ctx.lineWidth = 5;
+        ctx.beginPath(); ctx.moveTo(ex - 18, -40);
+        ctx.quadraticCurveTo(ex, cover > 0.5 ? -26 : -46, ex + 18, -40); ctx.stroke();
+      }
+      // brows: lifted while listening, knotted while covering
+      ctx.strokeStyle = DARK; ctx.lineWidth = 7;
+      ctx.beginPath(); ctx.moveTo(ex - 20, -72 - perk + cover * 10);
+      ctx.quadraticCurveTo(ex, -82 - perk + cover * 20, ex + 20, -72 - perk + cover * 10); ctx.stroke();
+    }
+
+    // nostrils and the mouth
+    ctx.fillStyle = LINE;
+    ctx.beginPath(); ctx.ellipse(-10, 10, 5, 3.5, 0, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(10, 10, 5, 3.5, 0, 0, 7); ctx.fill();
+    if (mouth > 1) {
+      ctx.fillStyle = '#3a1518';
+      ctx.beginPath(); ctx.ellipse(0, 48 + mouth * 0.4, 26 + mouth * 0.3, 4 + mouth * 0.55, 0, 0, 7); ctx.fill();
+      if (mouth > 10) {
+        ctx.fillStyle = '#e8788a';                                      // tongue
+        ctx.beginPath(); ctx.ellipse(0, 54 + mouth * 0.6, 14, mouth * 0.22, 0, 0, 7); ctx.fill();
+      }
+    } else {
+      ctx.strokeStyle = LINE; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(-28, 46); ctx.quadraticCurveTo(0, 60, 28, 46); ctx.stroke();
+    }
+
+    // arms and hands: at rest, down in the lap; covering, swung up over the ears
+    for (const side of [-1, 1]) {
+      const hx = side * (96 + (1 - cover) * 2), hy = 196 - cover * 224;      // lap -> over the ear
+      ctx.strokeStyle = FUR; ctx.lineWidth = 30;
+      ctx.beginPath(); ctx.moveTo(side * 100, 150);
+      ctx.quadraticCurveTo(side * (170 - cover * 10), 180 - cover * 120, hx, hy); ctx.stroke();
+      ctx.fillStyle = SKIN;
+      ctx.beginPath(); ctx.ellipse(hx, hy, 34, 38, side * 0.25, 0, 7); ctx.fill();
+      // fingers, so a hand over the ear reads as a hand
+      ctx.strokeStyle = SKIN; ctx.lineWidth = 12;
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath(); ctx.moveTo(hx + i * 12, hy - 20);
+        ctx.lineTo(hx + i * 14 + side * 6 * cover, hy - 46 + Math.abs(i) * 6); ctx.stroke();
+      }
+    }
+    ctx.restore();
+  };
+
   // Background only. A real registry entry rather than a guard at the draw call, so the console
   // lists it, the contact sheet renders it, and an unknown-name typo still throws (#60). The
   // backgrounds assume a character owns the middle of the frame; with none selected that room is
@@ -1091,7 +1202,7 @@ export function installHud(): void {
     stream,
     set(title: any, sub: any) { S.title = title || S.title;
                                const n = sub || ''; if (n !== S.sub) S.subAt = S.frames; S.sub = n; },
-    version: 'hud-v13-not-listening',
+    version: 'hud-v14-monkey',
     avatars: () => Object.keys(AVATARS),
     backgrounds: () => Object.keys(BACKGROUNDS),
     speakerColor,
@@ -1207,7 +1318,7 @@ export function createCameraController(page: Page): CameraController {
       // HUD edits become hot too (no rejoin), matching the Node-side surfaces.
       const stale = await page.evaluate(() => {
         const g: any = globalThis as any;
-        if (g.__vexaCam && g.__vexaCam.version === 'hud-v13-not-listening') return false;
+        if (g.__vexaCam && g.__vexaCam.version === 'hud-v14-monkey') return false;
         try { delete g.__vexaCam; } catch { g.__vexaCam = undefined; }
         return true;
       }).catch(() => false);

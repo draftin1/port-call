@@ -52,7 +52,7 @@ EMOJI = ["👍", "🎉", "💖", "👏", "😂", "😮"]
 # Fallback lists only: the page reads the HUD's own registries (avatars()/backgrounds()) and uses
 # these if the HUD module cannot be loaded. An unknown name is REJECTED by the bot with the valid
 # set named, so a drift here is a loud error, never a silently unchanged tile.
-AVATARS = ["rooster", "hancock", "tina", "dmarz", "cat", "alien", "dolphin"]
+AVATARS = ["rooster", "hancock", "tina", "dmarz", "cat", "alien", "dolphin", "monkey"]
 BACKGROUNDS = ["transcript", "vitals", "swarm", "brainrot"]
 
 PAGE = r"""<!doctype html><meta charset=utf-8><title>Port Call</title>
@@ -485,7 +485,7 @@ const SAMPLE=['Sample text: roadmap review, camera picker ships Friday.','Transc
   'Budget, hiring, launch plan, customer feedback.'];
 const ABOUT={rooster:'the original rooster',hancock:'a rooster drawn from life',tina:'a cube-faced robot',
   dmarz:'a one-eyed portrait',cat:'an orange tabby',alien:'a tall green alien',
-  dolphin:'a dolphin up out of the water',none:'no character, background only',transcript:'live captions',
+  dolphin:'a dolphin up out of the water',monkey:'a monkey; covers its ears when transcription is off',none:'no character, background only',transcript:'live captions',
   vitals:'pipeline numbers',swarm:'transcript words in orbit',brainrot:'transcript words thrown around'};
 async function thumb(avatar,bg,rect,lines){
   const f=document.createElement('iframe');

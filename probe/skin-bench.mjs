@@ -249,14 +249,15 @@ if (busy === quiet) {
 
 // ── NOT LISTENING must show, and must go away again ───────────────────────────────────────
 // Transcription off is a state the room can only read off the tile, so the tile has to render it
-// differently from the same skin listening: a plate on every background. Then listening again must restore the plain render, or a bot switched back on would
+// differently from the same skin listening: a plate on every background, and the monkey covering
+// its ears. Then listening again must restore the plain render, or a bot switched back on would
 // go on telling the room it was not listening.
-for (const avatar of ['rooster']) {
+for (const avatar of ['rooster', 'monkey']) {
   await page.evaluate((a) => globalThis.__vexaCam.hud({ avatar: a, bg: 'vitals', listening: true }), avatar);
   await page.waitForTimeout(400);
   const on = await signature();
   await page.evaluate(() => globalThis.__vexaCam.hud({ listening: false }));
-  await page.waitForTimeout(700);
+  await page.waitForTimeout(700);                                        // the monkey's arms swing up over ~12 frames
   const st = await page.evaluate(() => globalThis.__vexaCam.state());
   const off = await signature();
   await page.evaluate(() => globalThis.__vexaCam.hud({ listening: true }));
