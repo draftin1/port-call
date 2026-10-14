@@ -312,10 +312,15 @@ export async function startCaptureBridge(page: Page, inv: Invocation, pipeline: 
     await page.evaluate(() => {
       const w = (globalThis as any) as Record<string, any>;
       try { w.__vexaGmeetCapture?.stop?.(); } catch { /* best-effort */ }
+      // Forget the stopped capture and the tile watcher. The start above only builds them when
+      // these are unset, so without this a capture stopped by "transcription off" could never be
+      // started again: switching back on would report success and collect nothing.
+      w.__vexaGmeetCapture = null;
       try { if (w.__vexaMixRescan) { (globalThis as any).clearInterval(w.__vexaMixRescan); w.__vexaMixRescan = null; } } catch { /* */ }
       try { if (w.__vexaMixedCapture && typeof w.__vexaMixedCapture.stop === 'function') w.__vexaMixedCapture.stop(); } catch { /* best-effort */ }
       try { w.__vexaMixCtx?.close?.(); } catch { /* best-effort */ }
       try { w.__vexaGmeetSpeakers?.destroy?.(); } catch { /* best-effort */ }
+      w.__vexaGmeetSpeakers = null;
     }).catch(() => { /* page already gone */ });
   };
 }

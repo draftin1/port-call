@@ -40,6 +40,8 @@ interface Channel {
   names: { t: number; name: string }[];
   lastName: string;
   seq: number;
+  /** Set by pause(): this stream was dropped, and a socket still connecting must not adopt it. */
+  gone?: boolean;
 }
 
 const PENDING_MAX = 40;        // ~10s of 256ms blocks; past that the service is down, not slow
@@ -106,6 +108,7 @@ export function createPipecatBotPipeline(
       `${base}/ws?meeting=${encodeURIComponent(meeting)}&channel=${ch}`);
     ws.binaryType = 'arraybuffer';
     ws.onopen = () => {
+      if (c.gone) { try { ws.close(); } catch { /* already gone */ } return; }   // paused while connecting
       c.ws = ws; c.opening = false;
       log(`ch${ch} connected${c.pending.length ? `, sending ${c.pending.length} held block(s)` : ''}`);
       for (const b of c.pending.splice(0)) { try { ws.send(b); } catch (err) { onError?.(err); } }
@@ -131,6 +134,19 @@ export function createPipecatBotPipeline(
     async stop() {
       stopped = true;
       for (const c of channels.values()) { try { c.ws?.close(); } catch { /* already gone */ } }
+    },
+    // Transcription switched off: close every stream, so the service drops any utterance it was
+    // still working on, and forget who was lit. A stream reconnects on its next block, which only
+    // comes if capture is started again.
+    async pause() {
+      const open = [...channels.values()];
+      channels.clear();
+      for (const c of open) {
+        c.gone = true; c.opening = false; c.pending.length = 0;
+        const ws = c.ws; c.ws = null;
+        try { ws?.close(); } catch { /* already gone */ }
+      }
+      log(`paused: ${open.length} stream(s) closed`);
     },
     feedAudio(channel, glowName, pcm, tsMs) {
       let c = channels.get(channel);

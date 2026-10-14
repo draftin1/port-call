@@ -95,6 +95,8 @@ PAGE = r"""<!doctype html><meta charset=utf-8><title>Port Call</title>
  #botpane{overflow:auto;padding:14px 16px}
  .card{max-width:560px;margin:28px auto;padding:22px 24px;background:var(--panel);border:1px solid var(--line);border-radius:16px}
  .card h2{margin:0 0 6px;font-size:19px} .card p{margin:6px 0 14px;color:var(--dim)}
+ .opt{display:flex;gap:10px;align-items:flex-start;margin-top:12px;cursor:pointer}
+ .opt input{margin-top:3px;width:16px;height:16px;flex:none} .opt small{display:block;color:var(--dim);margin-top:2px}
  .check{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line);flex-wrap:wrap}
  .check:first-of-type{border-top:0} .check .what{flex:1 1 200px;min-width:0} .check .what small{display:block;color:var(--dim)}
  .check select{flex:0 1 260px;min-width:0;max-width:100%}
@@ -168,6 +170,9 @@ PAGE = r"""<!doctype html><meta charset=utf-8><title>Port Call</title>
         <button class=go onclick=join()>Join</button>
       </div>
       <div id=lastroom class=mono style="margin-top:8px"></div>
+      <label class=opt><input type=checkbox id=txjoin checked onchange=txremember()>
+        <span>Transcribe this call
+          <small>Unticked, the bot joins without listening: it collects no sound and writes no transcript, and its tile says NOT LISTENING. You can switch it on during the call; the bot says so in the meeting chat.</small></span></label>
       <div class=lbl>before you go</div>
       <div id=checks></div>
     </div>
@@ -186,7 +191,12 @@ PAGE = r"""<!doctype html><meta charset=utf-8><title>Port Call</title>
   </section>
 
   <aside id=botpane>
-    <div class=lbl style="margin-top:0">the bot's tile</div>
+    <div id=txbox style=display:none>
+      <div class=lbl style="margin-top:0">transcription</div>
+      <div class=row><button id=txbtn onclick=txtoggle()>…</button></div>
+      <div class=hint id=txhint></div>
+    </div>
+    <div class=lbl>the bot's tile</div>
     <iframe id=stage title="live preview of the bot's camera tile"></iframe>
     <div class=mono id=stagecap style="margin-top:6px"></div>
     <div class=lbl>character</div><div class=cards id=avcards></div>
@@ -252,7 +262,7 @@ async function join(){
   const room=$('roomin').value.trim()||S.last_room||'';
   if(!room){$('roomin').focus();return}
   $('banner').style.display='none';
-  const t=await post('/join',{room});
+  const t=await post('/join',{room,transcribe:$('txjoin').checked});
   if(/^joining/.test(t)) $('roomin').value=''; else {$('banner').textContent=t;$('banner').style.display='block'}
   refresh();
 }
@@ -276,6 +286,27 @@ const PHASES={
   active:['ok','In the call',''],
   stopping:['warnd pulse','Leaving',''],
 };
+// ── transcription on / off ─────────────────────────────────────────────────────────────────
+// Off is off at the source: the bot takes its taps off the meeting's audio. The choice for the
+// next join is remembered in this browser; the state of the bot in the call comes from the bot.
+function txremember(){try{localStorage.setItem('pc.transcribe',$('txjoin').checked?'1':'0')}catch(e){}}
+try{if(localStorage.getItem('pc.transcribe')==='0') $('txjoin').checked=false}catch(e){}
+function txtoggle(){
+  const L=S.listening; if(!L) return;
+  // Turning it ON changes what the bot does with what people say, mid-call. Ask once here; the bot
+  // itself then tells the room in the meeting chat and on its tile.
+  if(!L.on&&!confirm('Turn transcription on? The bot will start listening, and will say so in the meeting chat.')) return;
+  act({action:L.on?'transcription_off':'transcription_on'});
+}
+function txview(s,m){
+  const L=s.listening, b=$('txbtn');
+  $('txbox').style.display=m==='call'?'':'none';
+  b.disabled=!L; b.className=L&&!L.on?'go':'';
+  b.textContent=!L?'Not switchable for this bot':L.on?'Turn transcription off':'Turn transcription on';
+  $('txhint').textContent=!L?'This bot joined before the switch existed. It applies from the next join.'
+    :L.on?'On: the bot is listening and transcribing. Turning it off stops it collecting sound at all.'
+    :'Off: the bot is not collecting sound, and its tile says NOT LISTENING. Turning it on is announced in the meeting chat.';
+}
 function mode(p){return p==='active'||p==='stopping'?'call':(p==='requested'||p==='joining'||p==='awaiting_admission')?'joining':'lobby'}
 function render(s){
   S=s; BOT=s.bot;
@@ -283,7 +314,7 @@ function render(s){
   $('dot').className='dot '+cls; $('phase').textContent=title;
   const oo=s.optouts||{}, named=oo.named||[], nout=named.length+(oo.unnamed||0);
   $('sub').textContent=s.phase==='active'?s.room+(s.presenting?' · presenting':'')+(s.camera===false?' · camera off':'')
-    +(nout?` · ${nout} opted out`:''):(s.room&&m!=='lobby'?`${s.room} · ${sub}`:sub);
+    +(nout?` · ${nout} opted out`:'')+(s.listening&&!s.listening.on?' · transcription off':''):(s.room&&m!=='lobby'?`${s.room} · ${sub}`:sub);
   if(nout) $('sub').title=[...named,...(oo.unnamed?[`${oo.unnamed} without a name`]:[])].join(', '); else $('sub').removeAttribute('title');
   $('elapsed').textContent=s.phase==='active'&&s.since?mmss(Date.now()/1000-s.since):'';
   const prev=document.body.dataset.mode;
@@ -291,7 +322,7 @@ function render(s){
   $('leave').style.display=m==='call'?'':'none'; $('lookbtn').style.display=m==='call'?'':'none';
   if(m==='call'&&prev!=='call'){ $('say').focus(); document.body.classList.remove('look'); }
   PRESENTING=!!s.presenting; $('present').textContent=PRESENTING?'Stop presenting':'Present the tile';
-  newMeeting(s); settle(s);
+  newMeeting(s); settle(s); txview(s,m);
   readiness(s.health); lobby(s); joiningView(s); timeline(s); caption();
 }
 function readiness(h){
@@ -397,7 +428,8 @@ function timeline(s, keep){
   const tl=$('timeline'), stick=!keep&&tl.scrollHeight-tl.scrollTop-tl.clientHeight<80;
   const more=OLDER?`<div id=more onclick=loadOlder()>${OLDER} earlier — scroll up or click to load</div>`:'';
   tl.innerHTML=items.length?more+items.map(i=>`<div class="ev ${i.cls}"><time>${hhmm(i.t)}</time><div class=body>${i.html}</div></div>`).join('')
-    :'<div id=empty>Nothing yet — when people speak, it shows up here, and so does what the bot does.</div>';
+    :`<div id=empty>${s.listening&&!s.listening.on?'Transcription is off: what people say is not being collected. What the bot does still shows up here.'
+      :'Nothing yet — when people speak, it shows up here, and so does what the bot does.'}</div>`;
   if(keep) return;
   if(stick) tl.scrollTop=tl.scrollHeight; else $('jump').style.display='block';
   if(OLDER&&tl.scrollHeight<=tl.clientHeight) loadOlder();  // nothing to scroll yet: fill the view
@@ -406,7 +438,8 @@ function pendingText(p){
   const a=p.act||{}, tail=p.stale?' <small>no reply from the bot yet</small>':'';
   return (a.action==='speak'?(a.text.startsWith('!')?`playing ${esc(a.text.slice(1))}…`:`saying “${esc(a.text)}”…`)
     :a.action==='chat_send'?`posting to chat…`:a.action==='reaction'?`reacting ${a.emoji}…`
-    :a.action==='camera_show'?`changing the tile…`:a.action==='screen_share'?`starting to present…`:`${esc(a.action)}…`)+tail;
+    :a.action==='camera_show'?`changing the tile…`:a.action==='screen_share'?`starting to present…`
+    :a.action==='transcription_off'?`turning transcription off…`:a.action==='transcription_on'?`turning transcription on…`:`${esc(a.action)}…`)+tail;
 }
 function botItem(e){
   let html=`<span class=who>${BOT_NAME}</span>`, cls='bot';
@@ -548,6 +581,7 @@ EVENTS, PENDING = [], []
 CURSOR = {}            # bot id -> log lines already parsed
 SELFCHECK = {}         # last [selfcheck] per bot id
 OPTOUT = {}            # last [optout] roster per bot id: names at level 1, a count at level 2
+LISTEN = {}            # last [listening] per bot id: {"on", "why", "at"}; absent = a bot from before the switch
 CACHE = {"tts_t": 0, "tts": None, "last_room": None}
 EVENT_RE = {
     "speak": re.compile(r'^\[bot\] speak: "(.*)"$'),
@@ -606,6 +640,18 @@ def bot_log(mid):
                 SELFCHECK[mid] = json.loads(line[12:])
             except ValueError:
                 pass
+            continue
+        if line.startswith("[listening] {"):
+            # Whether the bot is collecting the room's sound at all (transcription on/off). The
+            # bot writes its state on every change, so the latest line is the state.
+            try:
+                LISTEN[mid] = j = json.loads(line[12:])
+            except ValueError:
+                continue
+            EVENTS.append({"kind": "note", "t": now, "text": (
+                "transcription on: listening and transcribing" if j.get("on")
+                else "transcription off: not collecting the room's sound") + f" ({j.get('why', '?')})"})
+            PENDING[:] = [p for p in PENDING if p["act"].get("action") not in ("transcription_on", "transcription_off")]
             continue
         if line.startswith("[optout] {"):
             # The bot writes the whole roster each time, so the latest line is the state; a note
@@ -772,7 +818,8 @@ def state(floor=None):
         sc = SELFCHECK.get(b["id"], {})
         st.update(phase=b["status"], bot=b["id"], room=b["native_meeting_id"], since=LAST["active_at"],
                   joined_at=LAST["joined_at"], camera=sc.get("cameraOn"), presenting=sc.get("presenting"),
-                  transcript=transcript(b["native_meeting_id"]), optouts=OPTOUT.get(b["id"], {}))
+                  transcript=transcript(b["native_meeting_id"]), optouts=OPTOUT.get(b["id"], {}),
+                  listening=LISTEN.get(b["id"]))
     elif LAST["id"] and not LAST["ended"]:
         LAST["ended"] = now
         bot_log(LAST["id"])                            # the leave reason lands after the bot is gone
@@ -846,8 +893,13 @@ class H(BaseHTTPRequestHandler):
             except Exception:
                 pass
             try:
-                r = gw("/bots", method="POST", body={"platform": "google_meet", "native_meeting_id": code,
-                                                     "bot_name": BOT_NAME, "voice_agent_enabled": True})
+                spawn = {"platform": "google_meet", "native_meeting_id": code,
+                         "bot_name": BOT_NAME, "voice_agent_enabled": True}
+                # "Transcribe this call" unticked: the bot joins with its audio taps down. Sent
+                # only when the page says so; absent, the rig's own default applies as before.
+                if "transcribe" in body:
+                    spawn["transcribe_enabled"] = bool(body["transcribe"])
+                r = gw("/bots", method="POST", body=spawn)
             except urllib.error.HTTPError as e:
                 detail = e.read().decode(errors="replace")[:300]
                 return self._send(f"join refused ({e.code}): {detail}", "text/plain")

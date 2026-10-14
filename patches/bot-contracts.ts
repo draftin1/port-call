@@ -89,7 +89,10 @@ export type Act =
   | { action: 'selfcheck' }
   | { action: 'camera_show'; text: string; sub?: string; avatar?: string; bg?: string }
   | { action: 'camera_off' }
-  | { action: 'reaction'; emoji: string };
+  | { action: 'reaction'; emoji: string }
+  // Not in upstream's acts.v1: switch whether the bot collects the room's sound at all.
+  | { action: 'transcription_on' }
+  | { action: 'transcription_off' };
 
 export type ActAction = Act['action'];
 
@@ -100,6 +103,7 @@ export const ACT_ACTIONS: readonly ActAction[] = [
   'screen_show', 'screen_stop', 'avatar_set', 'avatar_reset',
   'screen_share', 'screen_share_stop', 'selfcheck',
   'camera_show', 'camera_off', 'reaction',
+  'transcription_on', 'transcription_off',
 ];
 
 /** The redis pub/sub channel carrying a meeting's command bus (acts.v1). */

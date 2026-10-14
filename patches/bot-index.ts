@@ -138,12 +138,17 @@ function teeActs(source: ActsSource, voice: (act: Act) => void | Promise<void>):
   };
 }
 
+/** Whether the bot is collecting the room's sound, and the two ways to change it. */
+interface Listening { on(why: string): Promise<void>; off(why: string): Promise<void>; }
+
 /** The bot's voice-act handler: route acts.v1 speak / speak_stop to the SpeakController, and
  *  screen_share / screen_share_stop to the ScreenShareController, chat_send / chat_read to the
  *  ChatController. Remaining unimplemented: screen_show / avatar_set / avatar_reset. */
 function voiceHandler(speak: SpeakController, page: any, platform: string,
-                      cam: CameraController): (act: Act) => Promise<void> {
+                      cam: CameraController, listen: Listening): (act: Act) => Promise<void> {
   return async (act) => {
+    if (act.action === 'transcription_on') return void await listen.on('switched on from the console');
+    if (act.action === 'transcription_off') return void await listen.off('switched off from the console');
     // speak stays statically wired: it owns PulseAudio + mic state, not page DOM.
     if (act.action === 'speak') return void await speak.speak(act.text, act.voice);
     if (act.action === 'speak_stop') return void await speak.stop();
@@ -271,9 +276,53 @@ export async function main(env: NodeJS.ProcessEnv = process.env): Promise<number
     const tap = createCaptureTap(inv.meeting_id ?? inv.nativeMeetingId ?? 'x', (m) => console.log(`[bot] ${m}`));
     const sess = session, bp = botPipeline, rec = recording;
     let chatWatcher: { stop(): void } | null = null;
+
+    // ── TRANSCRIPTION ON / OFF ────────────────────────────────────────────────────────────────
+    // Off means off at the source, not "transcribed and thrown away": the page-side taps on the
+    // meeting's audio are torn down and the tile watcher with them, and the lane drops whatever
+    // it was still working on. Nothing of the room's sound enters this process, so nothing can be
+    // transcribed. (A recording, if RECORDING_ENABLED, is a separate tap and a separate switch.)
+    //
+    // The room is told, both ways: the tile says NOT LISTENING while off, and each change is
+    // posted to the meeting chat. Switching ON mid-call is the one that matters. People may have
+    // spoken freely because the bot was not listening, and they must learn that has changed from
+    // the meeting itself, not from a console they cannot see.
+    //
+    // It starts in the state the spawn asked for (transcribe_enabled) and is changed by the
+    // transcription_on / transcription_off acts. Every change is written as one [listening] line,
+    // which is what the console reads the state from.
+    let listening = false;
+    const report = (why: string): void => {
+      console.log(`[listening] ${JSON.stringify({ on: listening, why, at: Date.now() })}`);
+      void sess.page.evaluate((on) => (globalThis as any).__vexaCam?.hud({ listening: on }), listening)
+        .catch(() => { /* the tile is told again on the next change; the log line is the record */ });
+    };
+    const tellRoom = async (text: string): Promise<void> => {
+      try { const m = await surface('chat'); await m.createChatController(sess.page).post(text); }
+      catch (e) { console.error(`[listening] could not post to the meeting chat: ${String(e)}`); }
+    };
+    const listen: Listening = {
+      async on(why) {
+        if (listening) return report(why);
+        stopCapture = await startCaptureBridge(sess.page, inv, bp, tap);
+        listening = true; report(why);
+        if (why !== 'on at join') await tellRoom('Transcription is ON: this bot is transcribing the call from here on.');
+      },
+      async off(why) {
+        if (!listening) return report(why);
+        const sc = stopCapture; stopCapture = async () => { /* stopped */ };
+        await sc().catch(() => { /* best-effort; the page may be closing */ });
+        await bp.pause?.();
+        listening = false; report(why);
+        await tellRoom('Transcription is OFF: this bot is not listening to or transcribing the call.');
+      },
+    };
     pipeline = {
       async start() {
-        stopCapture = await startCaptureBridge(sess.page, inv, bp, tap);   // on the live meeting page
+        // On the live meeting page. A bot spawned with transcribe_enabled=false starts with its
+        // taps down; it says so on its tile and collects nothing until it is switched on.
+        if (inv.transcribeEnabled === false) report('off at join');
+        else await listen.on('on at join');
         if (rec) stopRecording = await startRecording(sess.page, inv, rec);   // MediaRecorder → recording.v1
         await bp.start();
         // The room's one way to talk back: an opt-out typed in the chat (optout.ts). Loaded like
@@ -308,7 +357,7 @@ export async function main(env: NodeJS.ProcessEnv = process.env): Promise<number
     const speak = createSpeakController(session.page, inv);
     const cam = createCameraController(session.page);
     hudLine = (speaker, text) => cam.onLine(speaker, text);
-    acts = teeActs(liveActs, voiceHandler(speak, session.page, inv.platform, cam));
+    acts = teeActs(liveActs, voiceHandler(speak, session.page, inv.platform, cam, listen));
   } catch (e) {
     console.error(`[bot] browser launch/capture wiring failed — falling back to clean terminal failed: ${String(e)}`);
     join = noBrowserJoinDriver(String(e));

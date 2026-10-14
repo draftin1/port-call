@@ -35,7 +35,8 @@ export function installHud(): void {
   const S: any = { title: 'VEXA', sub: '', lines: [] as string[], speaker: '', segments: 0,
                    lastAt: 0, started: Date.now(), frames: 0, speaking: false,
                    windingUp: false, windUpStart: 0, amplitude: 0,
-                   avatar: 'rooster', bg: 'transcript', speakerAt: 0, pose: 'idle', subAt: 0 };
+                   avatar: 'rooster', bg: 'transcript', speakerAt: 0, pose: 'idle', subAt: 0,
+                   listening: true };   // false: the bot is not collecting the room's sound
   const W = 1280, H = 720;
   // Meet cover-crops the 16:9 canvas to the TILE's aspect, and a tile in a grid is nearly square.
   // Measured on a 3-up grid 2026-08-19: the tile was ~510x605, so only the central ~607px of the
@@ -756,13 +757,18 @@ export function installHud(): void {
     ctx.textAlign = 'center';
     // The name in its own colour, the one the console shows it in; faded once they have gone quiet.
     ctx.fillStyle = S.speaker ? speakerColor(S.speaker, hot ? 0.95 : 0.55) : 'rgba(90,90,112,0.9)';
-    ctx.fillText(clipFit((S.speaker || 'listening…').toUpperCase(),
-                         'bold 36px system-ui, sans-serif'), W / 2, 52);
+    // Not while transcription is off: the plate drawn by draw() owns this line then, and a
+    // "LISTENING…" here would be a lie printed on the bot's own face.
+    if (S.listening) {
+      ctx.fillText(clipFit((S.speaker || 'listening…').toUpperCase(),
+                           'bold 36px system-ui, sans-serif'), W / 2, 52);
+    }
 
     // Caption ABOVE the character: in a Meet grid the viewer's own picture-in-picture sits over
     // the bottom-right of every remote tile, so anything written low is the first thing occluded.
     const last = S.lines.length ? S.lines[S.lines.length - 1] : '';
-    const rows = wrapFit(last || 'say something…', 'bold 56px system-ui, sans-serif').slice(-2);
+    const rows = wrapFit(S.listening ? (last || 'say something…') : 'transcription is off',
+                         'bold 56px system-ui, sans-serif').slice(-2);
     ctx.fillStyle = 'rgba(7,7,12,0.72)';
     ctx.fillRect(0, 76, W, rows.length * 62 + 22);
     ctx.fillStyle = '#ffffff';
@@ -993,7 +999,8 @@ export function installHud(): void {
 
     // activity band
     const puls = hot ? (Math.sin(t / 5) + 1) / 2 : 0;
-    ctx.fillStyle = hot ? 'rgba(124,226,139,' + (0.25 + puls * 0.5) + ')' : 'rgba(255,123,114,0.30)';
+    ctx.fillStyle = !S.listening ? 'rgba(138,138,160,0.35)'
+      : hot ? 'rgba(124,226,139,' + (0.25 + puls * 0.5) + ')' : 'rgba(255,123,114,0.30)';
     ctx.fillRect(0, 0, W, 12);
 
     // ── BACKGROUND, then CHARACTER: two independent choices, any avatar on any background.
@@ -1005,6 +1012,21 @@ export function installHud(): void {
 
     // the character, centred and low enough to clear the caption
     AVATARS[S.avatar](W / 2, 452, 1.15, t, state);
+
+    // NOT LISTENING. Drawn on every background, inside the band Meet shows, whenever the bot is
+    // not collecting the room's sound (transcription switched off). The people in the call cannot
+    // see the console; this tile is the only place they can read what the bot is doing with what
+    // they say, so it states it rather than leaving an idle face to be read as attention.
+    if (!S.listening) {
+      ctx.fillStyle = 'rgba(16,16,24,0.94)';
+      ctx.fillRect(SAFE_X0, 18, SAFE_W, 50);
+      ctx.fillStyle = '#b9b9cc';
+      ctx.fillRect(SAFE_X0, 18, 6, 50);
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 32px system-ui, sans-serif';
+      ctx.fillStyle = '#f0f0f6';
+      ctx.fillText('NOT LISTENING', W / 2, 54);
+    }
 
     // meter + counters
     for (let i = 0; i < 26; i++) {
@@ -1069,7 +1091,7 @@ export function installHud(): void {
     stream,
     set(title: any, sub: any) { S.title = title || S.title;
                                const n = sub || ''; if (n !== S.sub) S.subAt = S.frames; S.sub = n; },
-    version: 'hud-v12-telepathy',
+    version: 'hud-v13-not-listening',
     avatars: () => Object.keys(AVATARS),
     backgrounds: () => Object.keys(BACKGROUNDS),
     speakerColor,
@@ -1102,6 +1124,7 @@ export function installHud(): void {
       // then silently never again. capture-bridge sends this once per speak, so there is no retrigger.
       if (patch.windingUp !== undefined) { S.windingUp = !!patch.windingUp; if (patch.windingUp) S.windUpStart = S.frames; }
       if (patch.amplitude !== undefined) { S.amplitude = patch.amplitude; }
+      if (patch.listening !== undefined) S.listening = !!patch.listening;
       if (patch.title) S.title = patch.title;
       if (patch.sub !== undefined) { if (patch.sub !== S.sub) S.subAt = S.frames; S.sub = patch.sub; }
     },
@@ -1110,7 +1133,7 @@ export function installHud(): void {
     // only assert "frames advanced", which passes with the entire speak feature deleted — that gap
     // is exactly how a beak running off a timer passed for a week.
     state: () => ({
-      segments: S.segments, lines: S.lines.slice(-4), avatar: S.avatar, bg: S.bg,
+      segments: S.segments, lines: S.lines.slice(-4), avatar: S.avatar, bg: S.bg, listening: S.listening,
       pose: S.pose, amplitude: S.amplitude, speaker: S.speaker,
     }),
   };
@@ -1184,7 +1207,7 @@ export function createCameraController(page: Page): CameraController {
       // HUD edits become hot too (no rejoin), matching the Node-side surfaces.
       const stale = await page.evaluate(() => {
         const g: any = globalThis as any;
-        if (g.__vexaCam && g.__vexaCam.version === 'hud-v12-telepathy') return false;
+        if (g.__vexaCam && g.__vexaCam.version === 'hud-v13-not-listening') return false;
         try { delete g.__vexaCam; } catch { g.__vexaCam = undefined; }
         return true;
       }).catch(() => false);

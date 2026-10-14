@@ -247,6 +247,27 @@ if (busy === quiet) {
   console.log('  brainrot calms when the pipeline goes quiet');
 }
 
+// ── NOT LISTENING must show, and must go away again ───────────────────────────────────────
+// Transcription off is a state the room can only read off the tile, so the tile has to render it
+// differently from the same skin listening: a plate on every background. Then listening again must restore the plain render, or a bot switched back on would
+// go on telling the room it was not listening.
+for (const avatar of ['rooster']) {
+  await page.evaluate((a) => globalThis.__vexaCam.hud({ avatar: a, bg: 'vitals', listening: true }), avatar);
+  await page.waitForTimeout(400);
+  const on = await signature();
+  await page.evaluate(() => globalThis.__vexaCam.hud({ listening: false }));
+  await page.waitForTimeout(700);
+  const st = await page.evaluate(() => globalThis.__vexaCam.state());
+  const off = await signature();
+  await page.evaluate(() => globalThis.__vexaCam.hud({ listening: true }));
+  await page.waitForTimeout(700);
+  const back = await signature();
+  if (st.listening !== false) { console.log('NOT LISTENING not reported by state() for ' + avatar); fail = 1; }
+  else if (on === off) { console.log('NOT LISTENING renders the same as listening for ' + avatar); fail = 1; }
+  else if (back === off) { console.log('listening again still renders NOT LISTENING for ' + avatar); fail = 1; }
+  else console.log('  ' + avatar + ': not-listening render differs, and listening again restores it');
+}
+
 await browser.close();
 console.log(fail ? 'FAIL skins' : 'PASS skins (' + names.avatars.length + ' avatars x '
                                   + names.backgrounds.length + ' backgrounds)');

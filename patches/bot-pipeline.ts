@@ -47,6 +47,9 @@ export interface BotPipeline extends Pipeline {
   feedMixedAudio(pcm: Float32Array, tsMs: number): void;
   /** A mixed-lane "who is lit" hint (Zoom/Teams active-speaker), windowed by the namer. */
   recordHint(name: string, tMs: number, isEnd?: boolean): void;
+  /** Transcription switched off mid-call: drop what is in flight and hold nothing open. The lane
+   *  comes back by itself on the next fed frame. Optional: a lane with nothing to drop omits it. */
+  pause?(): Promise<void>;
 }
 
 /** The lane segments are the SEALED transcript.v1 view — structurally identical to the bot's
@@ -186,7 +189,10 @@ function createMixedBotPipeline(
  *  the lane never knows about config. transcribeEnabled=false ⇒ a no-op transcribe (the engine
  *  still runs turn gating but emits empty text; recording-only meetings need no STT). */
 export function createTranscribe(inv: Invocation): Transcribe {
-  if (inv.transcribeEnabled === false || !inv.transcriptionServiceUrl) {
+  // Not gated on inv.transcribeEnabled any more: that flag now means "start with transcription
+  // off" (index.ts does not start capture, so nothing reaches this), and the lane has to be the
+  // real one for transcription to be switched ON later in the same call.
+  if (!inv.transcriptionServiceUrl) {
     return async () => ({ text: '', language: inv.language ?? 'en', duration: 0, segments: [] });
   }
   const client = new TranscriptionClient({
@@ -215,7 +221,7 @@ export function createBotPipeline(
   // and the two can be measured against each other on the same rig. A test that injects its own
   // transcribe is asking for the built-in lane and gets it.
   const pipecat = process.env.PIPECAT_URL?.trim();
-  if (pipecat && !opts.transcribe && inv.transcribeEnabled !== false) {
+  if (pipecat && !opts.transcribe) {
     console.log(`[bot] pipeline: Meet audio -> Pipecat at ${pipecat}`);
     return createPipecatBotPipeline(pipecat, inv.nativeMeetingId ?? 'meeting', sink, opts.onError);
   }
