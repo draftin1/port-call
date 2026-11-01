@@ -44,6 +44,11 @@ GATEWAY = f"http://localhost:{ENV.get('VEXA_GW_PORT', '8056')}"
 STT = "http://127.0.0.1:8177"
 TOKENS = {"bot": "/tmp/vexa-bot-token.txt", "tx": "/tmp/vexa-tx-token.txt"}   # minted by ./pc up
 BOT_NAME = "Roost"
+
+
+def bot_name(raw):
+    """The name Meet shows. Its name box takes 60 characters; empty falls back to the default."""
+    return " ".join(str(raw or "").split())[:60] or BOT_NAME
 SFX = ["airhorn", "gavel", "ding", "objection", "order", "noted", "correct", "welcome", "timesup"]
 # Meet's picker set VARIES by UI state — a dump taken while presenting showed 🎊 💗 💯 😆 🙁 😲,
 # while the normal in-call picker shows these. The controller fails loudly (with the candidate
@@ -191,8 +196,11 @@ PAGE = r"""<!doctype html><meta charset=utf-8><title>Roost</title>
   </section>
 
   <aside id=botpane>
+    <div class=lbl style="margin-top:0">the bot's name</div>
+    <div class=row><input id=botname maxlength=60 placeholder="Roost" oninput="saveBotName()"></div>
+    <div class=hint id=namehint>What Meet shows for the bot. It is typed in at join and cannot change during a call.</div>
     <div id=txbox style=display:none>
-      <div class=lbl style="margin-top:0">transcription</div>
+      <div class=lbl>transcription</div>
       <div class=row><button id=txbtn onclick=txtoggle()>…</button></div>
       <div class=hint id=txhint></div>
     </div>
@@ -202,8 +210,6 @@ PAGE = r"""<!doctype html><meta charset=utf-8><title>Roost</title>
     <div class=lbl>character</div><div class=cards id=avcards></div>
     <div class=lbl>background</div><div class=cards id=bgcards></div>
     <div class=hint>Hover a card to watch it listen and speak. Click to use it.</div>
-    <div class=lbl>headline on the tile</div>
-    <div class=row><input id=head placeholder="e.g. ON AIR"><button onclick=cam()>Apply</button></div>
     <div class=lbl>screen</div>
     <div class=row>
       <button id=present onclick=present()>Present the tile</button>
@@ -235,6 +241,8 @@ PAGE = r"""<!doctype html><meta charset=utf-8><title>Roost</title>
 <script>
 const CFG=CONFIG_JSON;
 const BOT_NAME='Roost';
+function botLabel(){return S.bot_name||BOT_NAME}
+function saveBotName(){try{localStorage.setItem('pc-bot-name',$('botname').value)}catch(e){}}
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const hhmm=t=>new Date(t*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
@@ -255,17 +263,18 @@ async function post(path,body){
 const act=a=>post('/act',{act:a}).then(()=>setTimeout(refresh,400));
 function speak(){const v=$('say').value.trim(); if(v){act({action:'speak',text:v});$('say').value=''}}
 function chat(){const v=$('chat').value.trim(); if(v){act({action:'chat_send',text:v});$('chat').value=''}}
-function cam(){act({action:'camera_show',text:$('head').value||'VEXA',avatar:$('avatar').value,bg:$('bg').value})}
+function cam(){act({action:'camera_show',text:'VEXA',avatar:$('avatar').value,bg:$('bg').value})}
 let PRESENTING=false;
 // Set only by a join from this page, so reloading mid-call cannot overwrite the tile with the
 // picker's defaults. The bot cannot know the picks at spawn; render() sends them once it is in.
 let APPLY_SKIN=false;
-function present(){act(PRESENTING?{action:'screen_share_stop'}:{action:'screen_share',text:$('head').value||'VEXA'})}
+function present(){act(PRESENTING?{action:'screen_share_stop'}:{action:'screen_share',text:'VEXA'})}
+try{$('botname').value=localStorage.getItem('pc-bot-name')||''}catch(e){}
 async function join(){
   const room=$('roomin').value.trim()||S.last_room||'';
   if(!room){$('roomin').focus();return}
   $('banner').style.display='none';
-  const t=await post('/join',{room,transcribe:$('txjoin').checked});
+  const t=await post('/join',{room,name:$('botname').value,transcribe:$('txjoin').checked});
   if(/^joining/.test(t)){$('roomin').value='';APPLY_SKIN=true} else {$('banner').textContent=t;$('banner').style.display='block'}
   refresh();
 }
@@ -285,7 +294,7 @@ const PHASES={
   failed:['badd','Not in a call','the last join did not get in'],
   requested:['warnd pulse','Getting in','asking the gateway for a bot'],
   joining:['warnd pulse','Getting in','the bot is opening the meeting'],
-  awaiting_admission:['warnd pulse','Knocking','admit Roost in your Meet'],
+  awaiting_admission:['warnd pulse','Knocking','admit the bot in your Meet'],
   active:['ok','In the call',''],
   stopping:['warnd pulse','Leaving',''],
 };
@@ -314,6 +323,9 @@ function mode(p){return p==='active'||p==='stopping'?'call':(p==='requested'||p=
 function render(s){
   S=s; BOT=s.bot;
   if(APPLY_SKIN&&s.phase==='active'&&BOT){APPLY_SKIN=false;cam()}
+  const nameBox=$('botname'), inCall=mode(s.phase)!=='lobby';
+  nameBox.disabled=inCall;
+  if(inCall) nameBox.value=s.bot_name||BOT_NAME;
   const [cls,title,sub]=PHASES[s.phase]||PHASES.none, m=mode(s.phase);
   $('dot').className='dot '+cls; $('phase').textContent=title;
   const oo=s.optouts||{}, named=oo.named||[], nout=named.length+(oo.unnamed||0);
@@ -370,7 +382,7 @@ function joiningView(s){
   const n={requested:1,joining:2,awaiting_admission:3}[s.phase]||1;
   [1,2,3].forEach(i=>{$('s'+i).className=i<n?'done':i===n?'now':''});
   $('jtitle').textContent=s.phase==='awaiting_admission'?'Knocking':'Getting in…';
-  $('jinstr').textContent=s.phase==='awaiting_admission'?'Admit "Roost" in your Meet — only the host sees the knock.'
+  $('jinstr').textContent=s.phase==='awaiting_admission'?`Admit "${botLabel()}" in your Meet — only the host sees the knock.`
     :s.phase==='joining'?'The bot is opening the meeting in its browser.':'Asking the gateway for a bot.';
   $('jnote').textContent='If it never goes further, the picture below is what the bot is looking at.';
   $('jelapsed').textContent=s.joined_at?mmss(Date.now()/1000-s.joined_at):'';
@@ -425,7 +437,7 @@ function timeline(s, keep){
   const items=[];
   for(const l of [...OLD.transcript,...(s.transcript||[])]) items.push({t:l.t,html:who(l.speaker)+esc(l.text),cls:MARKER.test(l.text)?'note':''});
   for(const e of [...OLD.events,...(s.events||[])]) items.push(botItem(e));
-  for(const p of s.pending||[]) items.push({t:p.t,cls:'bot pending',html:`<span class=who>${BOT_NAME}</span>${pendingText(p)}`});
+  for(const p of s.pending||[]) items.push({t:p.t,cls:'bot pending',html:`<span class=who>${esc(botLabel())}</span>${pendingText(p)}`});
   items.sort((a,b)=>a.t-b.t);
   const key=OLDER+'#'+items.map(i=>i.t+i.cls+i.html.length).join('|');
   if(key===lastKey) return; lastKey=key;
@@ -446,7 +458,7 @@ function pendingText(p){
     :a.action==='transcription_off'?`turning transcription off…`:a.action==='transcription_on'?`turning transcription on…`:`${esc(a.action)}…`)+tail;
 }
 function botItem(e){
-  let html=`<span class=who>${BOT_NAME}</span>`, cls='bot';
+  let html=`<span class=who>${esc(botLabel())}</span>`, cls='bot';
   if(e.kind==='speak'){
     const sfx=e.text.startsWith('!');
     html+=sfx?`played <b>${esc(e.text.slice(1))}</b>`:`said “${esc(e.text)}”`;
@@ -458,7 +470,7 @@ function botItem(e){
   else if(e.kind==='reaction') html+=`reacted ${e.emoji}`;
   else if(e.kind==='camera') html+=e.off?`turned the camera off`:`tile → <b>${esc(e.avatar)}</b> on <b>${esc(e.bg)}</b>${e.text&&e.text!=='VEXA'?` · “${esc(e.text)}”`:''}`;
   else if(e.kind==='share') html+=e.presenting?`started presenting the tile`:`stopped presenting`;
-  else {cls='note';html=`<span class=who>${BOT_NAME}</span>${esc(e.text)}`}
+  else {cls='note';html=`<span class=who>${esc(botLabel())}</span>${esc(e.text)}`}
   return {t:e.t,cls,html};
 }
 function jumpdown(){const tl=$('timeline');tl.scrollTop=tl.scrollHeight;$('jump').style.display='none'}
@@ -580,7 +592,7 @@ setInterval(()=>{ if(S.phase==='active'&&S.since) $('elapsed').textContent=mmss(
 # The bot now in (or last in) a meeting, and what it did. EVENTS is read off the bot's own log, so
 # every entry is something the bot reported, not something this page sent. PENDING is what this
 # page sent and has not yet seen reported; the two meet when the log line arrives.
-LAST = {"id": None, "code": None, "status": None, "active_at": None, "joined_at": None, "ended": None}
+LAST = {"id": None, "code": None, "status": None, "active_at": None, "joined_at": None, "ended": None, "name": None}
 EVENTS, PENDING = [], []
 CURSOR = {}            # bot id -> log lines already parsed
 SELFCHECK = {}         # last [selfcheck] per bot id
@@ -800,7 +812,7 @@ def history(code, before):
 
 def state(floor=None):
     st = {"phase": "none", "bot": None, "room": None, "since": None, "joined_at": None, "camera": None,
-          "presenting": None, "failure": None, "last_room": CACHE["last_room"], "transcript": [],
+          "presenting": None, "failure": None, "last_room": CACHE["last_room"], "bot_name": LAST["name"], "transcript": [],
           "events": [], "pending": []}
     health = {"gateway": False, "tokens": bool(token("bot") and token("tx")), "tts": tts_ok(), "stt": stt("/models")}
     try:
@@ -813,7 +825,7 @@ def state(floor=None):
     now = time.time()
     if b:
         if b["id"] != LAST["id"]:                      # a bot this page did not send: adopt it
-            LAST.update(id=b["id"], code=b["native_meeting_id"], status=None, active_at=None, joined_at=now, ended=None)
+            LAST.update(id=b["id"], code=b["native_meeting_id"], status=None, active_at=None, joined_at=now, ended=None, name=None)
             EVENTS.clear(); PENDING.clear()
         LAST["status"] = b["status"]
         if b["status"] == "active" and not LAST["active_at"]:
@@ -892,13 +904,14 @@ class H(BaseHTTPRequestHandler):
             if not m:
                 return self._send("that is not a Meet link or code (abc-defg-hij)", "text/plain")
             code = m.group(1)
+            name = bot_name(body.get("name"))
             try:
                 gw(f"/bots/google_meet/{code}", method="DELETE")
             except Exception:
                 pass
             try:
                 spawn = {"platform": "google_meet", "native_meeting_id": code,
-                         "bot_name": BOT_NAME, "voice_agent_enabled": True}
+                         "bot_name": name, "voice_agent_enabled": True}
                 # "Transcribe this call" unticked: the bot joins with its audio taps down. Sent
                 # only when the page says so; absent, the rig's own default applies as before.
                 if "transcribe" in body:
@@ -909,7 +922,7 @@ class H(BaseHTTPRequestHandler):
                 return self._send(f"join refused ({e.code}): {detail}", "text/plain")
             except Exception as e:
                 return self._send(f"join failed: {e}", "text/plain")
-            LAST.update(id=r.get("id"), code=code, status="requested", active_at=None, joined_at=time.time(), ended=None)
+            LAST.update(id=r.get("id"), code=code, status="requested", active_at=None, joined_at=time.time(), ended=None, name=name)
             EVENTS.clear(); PENDING.clear()
             CACHE["last_room"] = code
             return self._send(f"joining {code} as bot {r.get('id')}", "text/plain")
