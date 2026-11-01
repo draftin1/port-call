@@ -1,0 +1,15 @@
+{
+  "source_id": "roost_transcripts",
+  "display_name": "Roost Transcripts",
+  "source_type": "ui_stream",
+  "delivery": "client_push",
+  "posture": "ambient",
+  "schema_id": "voxterm.transcript.v1",
+  "parser_id": "voxterm.transcript.v1",
+  "raw_enrichment_jobs": [],
+  "canonical_enrichment_jobs": [],
+  "enrichment_trigger": "manual",
+  "ingestion_trigger": "automatic",
+  "default_scope_id": "messages",
+  "allowed_scope_ids": ["messages:read", "messages:write"]
+}

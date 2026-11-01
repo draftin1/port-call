@@ -1,13 +1,15 @@
 <p align="center">
-  <img src="docs/assets/port-call-icon.svg" alt="Port Call's app icon: the bot's white rooster, face on, with a red comb and wattles and an orange beak, on a blue rounded square." width="128">
+  <img src="docs/assets/roost-icon.svg" alt="Roost's app icon: the bot's white rooster, face on, with a red comb and orange beak, ringed by an electric blue glow on a dark rounded square." width="128">
 </p>
 
-# Port Call
+# Roost
+
+Roost is a fork of [Port Call](https://github.com/amiller/port-call) by [amiller](https://github.com/amiller). It adds saving transcripts to your own [Topos](https://dialogues.ai) through a Dialogues connector, naming the bot before it joins, and opening a join on the selected character. See [transcript saving](docs/transcript-saving.md). Everything below describes what Port Call built, which Roost keeps.
 
 **A Google Meet participant you control from your laptop.** It joins your meeting, transcribes who
 said what, and acts in the call: it speaks in its own voice, plays sound effects, posts and reads
-chat, sends reactions, and shows a live animated tile as its camera. Everything runs on your
-machine; the only thing it talks to is Google Meet.
+chat, sends reactions, and shows a live animated tile as its camera. Capture runs on your machine. Optional transcript destinations send completed text only when
+you select them in the console.
 
 Built on [Vexa](https://github.com/Vexa-ai/vexa) (Apache-2.0), which handles joining and audio
 capture. Port Call adds the acting, the console, local transcription, and a long list of
@@ -78,11 +80,27 @@ noVNC view of its desktop. What that involves, and what must never leave your ma
 
 ### Where the data goes
 
-Nowhere. The stack binds to `127.0.0.1` only. Transcription is Whisper on your machine, the voice
+By default, transcripts stay local. The stack binds to `127.0.0.1` only. Transcription is Whisper on your machine, the voice
 is Piper inside a container, transcripts sit in a Postgres container, and the console has no login
 because nothing outside your laptop can reach it. Google sees a participant, the same as any
 attendee. The one cloud option, transcription through near.ai, is off unless you turn it on in
 `.env`, and `.env.example` says what leaves the machine when you do.
+
+### Optional transcript saving
+
+Use **Attach Dialogues** at the top of the console to select your TOPOS and approve transcript writing.
+Then open **Transcript saving** before joining, select a destination and timing, or tick **Send all new transcripts to my TOPOS** alongside
+another destination. **Detach Dialogues** removes the ticket and pauses local TOPOS saves and retries.
+Existing Vexa storage stays enabled. Extra destinations are off by default.
+
+Choose completed segments as they arrive, 30-second batches with a final flush, or manual saving
+with **Save this transcript** after the call ends. Only calls joined after selecting these options
+are enrolled; the console never exports old meetings automatically.
+
+TOPOS sends stable segment records; local files update one `.txt` per call; Supabase/PostgreSQL
+update one conversation row. Pending work survives console restarts, but Dialogues needs to be
+reattached. Setup, privacy, retry limits, and current integration gaps are in
+[docs/transcript-saving.md](docs/transcript-saving.md).
 
 ## Configuration
 

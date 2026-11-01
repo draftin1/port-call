@@ -18,6 +18,9 @@ Deliberately has no auth: it is bound to localhost and it can make a bot join a 
 expose it to the network.
 """
 import json, pathlib, re, subprocess, time, urllib.error, urllib.parse, urllib.request
+import os, secrets, threading
+from http.cookies import SimpleCookie
+from destinations import Attachment, DeliveryStore, LocalFile, Topos, Supabase, Postgres, DeliveryError
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -36,7 +39,12 @@ def dotenv():
     return out
 
 
-ENV = dotenv()
+ENV = {**dotenv(), **os.environ}
+CSRF = secrets.token_urlsafe(32)
+ATTACHMENT = Attachment(ENV)
+SAVES = None
+SAVE_POLL_ERROR = None
+SAVE_STOP = threading.Event()
 CONTAINER = ENV.get("COMPOSE_PROJECT_NAME", "vexa-rig") + "-vexa-lite-1"
 GATEWAY = f"http://localhost:{ENV.get('VEXA_GW_PORT', '8056')}"
 # stt_local.py: transcription on this machine, and the one process that knows which Whisper model
@@ -94,6 +102,9 @@ PAGE = r"""<!doctype html><meta charset=utf-8><title>Roost</title>
  .ok{background:var(--good)} .warnd{background:var(--warn)} .badd{background:var(--bad)} .pulse{animation:pulse 1.2s infinite}
  @keyframes pulse{50%{opacity:.25}}
 
+ #attachbtn,#detachbtn{flex:none;white-space:nowrap}
+ #attacherror{flex:none;margin:0;padding:8px 16px;font-size:12px;color:var(--bad);border-bottom:1px solid var(--line)}
+ [hidden]{display:none!important}
  /* ── main: the room on the left, the bot on the right ────────────────────────────────────── */
  main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 340px;grid-template-rows:minmax(0,1fr)}
  #room{min-width:0;min-height:0;display:flex;flex-direction:column;border-right:1px solid var(--line);position:relative}
@@ -160,10 +171,28 @@ PAGE = r"""<!doctype html><meta charset=utf-8><title>Roost</title>
   <span class=brand>ROOST</span>
   <div class=phase><span class=dot id=dot></span><b id=phase>…</b><span id=sub></span><span id=elapsed></span></div>
   <div id=ready></div>
+  <button id=attachbtn class=ghost onclick=connectDialogues() disabled>Attach Dialogues</button>
+  <button id=detachbtn class=ghost onclick=detachDialogues() hidden>Detach Dialogues</button>
   <button id=lookbtn class=ghost style=display:none onclick="document.body.classList.toggle('look')">Look</button>
   <button id=leave class=stop style=display:none onclick=leave()>Leave</button>
 </header>
 
+<p id=attacherror role=alert hidden></p>
+<details style="padding:8px 16px;border-bottom:1px solid var(--line)">
+ <summary>Transcript saving · <span id=savesummary>Vexa local storage retained</span></summary>
+ <label class=opt><input id=toposall type=checkbox><span>Send all new transcripts to my TOPOS, alongside the destination below
+ <small>Applies to calls joined from this console after selecting it. Existing history is never submitted.</small></span></label>
+ <div class=row style="margin-top:8px">
+  <label>Destination <select id=savewhere>
+   <option value=topos>TOPOS</option><option value=existing selected>Existing Vexa storage only</option>
+   <option value=file>Local transcript file</option><option value=supabase>Supabase</option><option value=postgres>PostgreSQL</option>
+  </select></label>
+  <label>Save timing <select id=savemode><option value=continuous>As completed segments arrive</option>
+   <option value=batch selected>Batch every 30 seconds + final flush</option><option value=manual>Only after the call, when I click Save</option></select></label>
+ </div>
+ <p class=hint>Settings apply when you join. Vexa continues storing locally. Files update one transcript per call; databases update stable rows. Manual saving requires an explicit click after the call ends.</p>
+ <div id=savestatus class=mono></div>
+</details>
 <main id=main data-mode=lobby>
   <section id=room>
     <div id=lobby class=card>
@@ -175,6 +204,7 @@ PAGE = r"""<!doctype html><meta charset=utf-8><title>Roost</title>
         <button class=go onclick=join()>Join</button>
       </div>
       <div id=lastroom class=mono style="margin-top:8px"></div>
+      <div id=savewarn role=status style="display:none;margin-top:10px;padding:10px 12px;border-radius:10px;border:1px solid var(--warn);color:var(--warn)"></div>
       <label class=opt><input type=checkbox id=txjoin checked onchange=txremember()>
         <span>Transcribe this call
           <small>Unticked, the bot joins without listening: it collects no sound and writes no transcript, and its tile says NOT LISTENING. You can switch it on during the call; the bot says so in the meeting chat.</small></span></label>
@@ -254,7 +284,7 @@ $('bg').innerHTML=CFG.backgrounds.map(b=>`<option>${b}</option>`).join('');
 
 // ── talking to the server ─────────────────────────────────────────────────────────────────────
 async function post(path,body){
-  const r=await fetch(path,{method:'POST',body:JSON.stringify(body||{})});
+  const r=await fetch(path,{method:'POST',headers:{'X-Port-Call-CSRF':CFG.csrf},body:JSON.stringify(body||{})});
   const t=await r.text();
   $('log').textContent=(t+'\n'+$('log').textContent).slice(0,4000);
   $('toast').textContent=t.length>160?t.slice(0,160)+'…':t;
@@ -274,7 +304,7 @@ async function join(){
   const room=$('roomin').value.trim()||S.last_room||'';
   if(!room){$('roomin').focus();return}
   $('banner').style.display='none';
-  const t=await post('/join',{room,name:$('botname').value,transcribe:$('txjoin').checked});
+  const t=await post('/join',{room,name:$('botname').value,transcribe:$('txjoin').checked,saving:{destination:$('savewhere').value,mode:$('savemode').value,topos:$('toposall').checked}});
   if(/^joining/.test(t)){$('roomin').value='';APPLY_SKIN=true} else {$('banner').textContent=t;$('banner').style.display='block'}
   refresh();
 }
@@ -388,7 +418,7 @@ function joiningView(s){
   $('jelapsed').textContent=s.joined_at?mmss(Date.now()/1000-s.joined_at):'';
   if(!shotTimer){ joinShot(); shotTimer=setInterval(joinShot,6000); }
 }
-async function joinShot(){ await fetch('/shot',{method:'POST'}); const i=$('joinshot'); i.style.display='block'; i.src='/shot.png?'+Date.now(); }
+async function joinShot(){ await fetch('/shot',{method:'POST',headers:{'X-Port-Call-CSRF':CFG.csrf}}); const i=$('joinshot'); i.style.display='block'; i.src='/shot.png?'+Date.now(); }
 
 // The conversation: the room's words and the bot's deeds in one thread, by time. The whole
 // meeting, loaded backwards: /state sends everything from FLOOR on, and scrolling to the top pages
@@ -582,6 +612,82 @@ async function refresh(){
   try{ render(await (await fetch('/state'+(FLOOR!=null?'?floor='+FLOOR:''))).json()); }
   catch(e){ $('dot').className='dot badd'; $('phase').textContent='Console unreachable'; $('sub').textContent=''; }
 }
+let attachmentBusy=false, attachmentEpoch=0;
+function attachmentError(message){
+ $('attacherror').textContent=message; $('attacherror').hidden=!message;
+}
+async function connectDialogues(){
+ if(attachmentBusy)return;
+ attachmentBusy=true; attachmentEpoch++; $('attachbtn').disabled=true; attachmentError('');
+ try{
+  const response=await fetch('/saving/connect',{method:'POST',headers:{'X-Port-Call-CSRF':CFG.csrf}});
+  if(!response.ok)throw new Error('Could not start attachment. Please try again.');
+  location.href=(await response.json()).url;
+ }catch(e){attachmentError(e.message);attachmentBusy=false;$('attachbtn').disabled=false}
+}
+async function detachDialogues(){
+ if(attachmentBusy)return;
+ attachmentBusy=true; attachmentEpoch++; $('detachbtn').disabled=true; $('detachbtn').textContent='Detaching…';
+ try{
+  const response=await fetch('/saving/disconnect',{method:'POST',headers:{'X-Port-Call-CSRF':CFG.csrf}});
+  if(!response.ok)throw new Error('Could not detach. Please try again.');
+  $('toposall').checked=false;
+  if($('savewhere').value==='topos')$('savewhere').value='existing';
+  forgetSaveChoice();
+  attachmentBusy=false; await loadSaving();
+ }catch(e){attachmentError(e.message);attachmentBusy=false;$('detachbtn').disabled=false;$('detachbtn').textContent='Detach Dialogues'}
+}
+// Attaching Dialogues is the opt-in, so the destination follows it to TOPOS. A destination the person
+// picks afterwards is kept, across reloads, until they detach.
+const SAVE_CHOICE='pc-save-destination';
+let saveDefaulted=false;
+function savedChoice(){try{return localStorage.getItem(SAVE_CHOICE)}catch(e){return null}}
+function forgetSaveChoice(){saveDefaulted=false;try{localStorage.removeItem(SAVE_CHOICE)}catch(e){}}
+function applySaveDefault(connected){
+ if(!connected||saveDefaulted)return;
+ saveDefaulted=true;
+ $('savewhere').value=savedChoice()||'topos';
+}
+$('savewhere').addEventListener('change',()=>{saveDefaulted=true;try{localStorage.setItem(SAVE_CHOICE,$('savewhere').value)}catch(e){}});
+// Joining without Dialogues falls back to Vexa storage and says nothing, which cost a real call its
+// save. So the join form says it first, and keeps saying it until the state changes.
+let saveConnected=null;
+function saveWarning(){
+ const box=$('savewarn'), saves=$('savewhere').value==='topos'||$('toposall').checked;
+ const text=saveConnected===null||!$('txjoin').checked?'':!saveConnected?"Dialogues isn't attached, so this call won't save to Topos.":saves?'':"Destination isn't TOPOS, so this call won't save to Topos.";
+ box.style.display=text?'block':'none';
+ box.textContent=text;
+ if(text&&!saveConnected){const b=document.createElement('button');b.textContent='Attach Dialogues';b.style.marginLeft='10px';b.onclick=connectDialogues;box.append(b)}
+}
+['savewhere','toposall','txjoin'].forEach(id=>$(id).addEventListener('change',saveWarning));
+async function loadSaving(){
+ if(attachmentBusy)return;
+ const epoch=attachmentEpoch;
+ try {
+  const response=await fetch('/saving');
+  if(!response.ok)throw new Error('unavailable');
+  const r=await response.json();
+  if(attachmentBusy||epoch!==attachmentEpoch)return;
+  const a=r.account;
+  $('attachbtn').hidden=a.connected||a.pending; $('attachbtn').disabled=false;
+  $('attachbtn').textContent=a.error?'Attach Dialogues again':'Attach Dialogues';
+  $('detachbtn').hidden=!a.connected&&!a.pending; $('detachbtn').disabled=false;
+  $('detachbtn').textContent=a.connected?'Detach Dialogues':'Cancel attachment';
+  attachmentError(a.error||'');
+  applySaveDefault(a.connected);
+  saveConnected=a.connected; saveWarning();
+  $('savesummary').textContent=r.error||(($('savewhere').value==='topos'||$('toposall').checked)?'Next join saves to TOPOS · ':'')+'Vexa local storage retained';
+  $('savestatus').innerHTML=r.deliveries.map(d=>`<div>${esc(d.room)} · ${esc(d.target)} · ${esc(d.target==='topos'&&!a.connected?'Paused · attach Dialogues to resume':d.error||(d.last?'Last delivery confirmed':'Waiting for save'))}
+   ${d.ended&&JSON.parse(d.targets)[d.target]==='manual'?`<button data-save="${esc(d.id)}">Save this transcript</button>`:''}</div>`).join('');
+  $('savestatus').querySelectorAll('[data-save]').forEach(b=>b.onclick=()=>post('/saving/manual',{id:b.dataset.save}).then(loadSaving));
+ } catch(e){
+  if(attachmentBusy||epoch!==attachmentEpoch)return;
+  $('savesummary').textContent='Save status unavailable';
+  attachmentError('Cannot reach Roost. Please try again.');
+  $('attachbtn').disabled=$('detachbtn').disabled=true;
+ }
+}
+loadSaving(); setInterval(loadSaving,3000);
 refresh(); initpicker();
 setInterval(refresh,2000);
 setInterval(()=>{ if(S.phase==='active'&&S.since) $('elapsed').textContent=mmss(Date.now()/1000-S.since); },1000);
@@ -859,14 +965,69 @@ def sfx_names():
     return ([s for s in SFX if s in have] + [s for s in have if s not in SFX]) if have else SFX
 
 
+def init_saving():
+    global SAVES
+    root = pathlib.Path(ENV.get('PORT_CALL_SAVE_DIR', str(HERE / '.port-call-saves')))
+    SAVES = DeliveryStore(root / 'delivery.sqlite3', {
+        'topos': Topos(ATTACHMENT), 'file': LocalFile(root / 'transcripts'),
+        'supabase': Supabase(ENV), 'postgres': Postgres(ENV)})
+
+
+def saving_tick():
+    global SAVE_POLL_ERROR
+    try:
+        active = {str(b['id']) for b in gw('/bots/status').get('running', [])}
+        for session in SAVES.sessions():
+            if session['ended'] and session['observed'] >= session['ended'] + 120:
+                continue
+            if not session['ended'] and time.time() - session['started'] < 15 and session['bot'] not in active:
+                continue
+            # IDs, not reusable Meet room codes, prevent copying an older call.
+            raw = gw('/transcripts/by-id/' + urllib.parse.quote(session['bot'], safe=''), 'tx')
+            SAVES.observe(session['id'], raw.get('segments') or [], ended=session['bot'] not in active)
+        SAVE_POLL_ERROR = None
+    except Exception:
+        SAVE_POLL_ERROR = 'Transcript fetch unavailable; saved checkpoints retained'
+    SAVES.flush()
+
+
+def saving_worker():
+    while not SAVE_STOP.is_set():
+        try:
+            saving_tick()
+        except Exception:
+            global SAVE_POLL_ERROR
+            SAVE_POLL_ERROR = 'Save worker error; check local configuration'
+        SAVE_STOP.wait(2)
+
+
 class H(BaseHTTPRequestHandler):
+    def _local(self):
+        return self.headers.get('Host') in ('localhost:8090', '127.0.0.1:8090')
+
     def _send(self, body, ctype="text/html; charset=utf-8", raw=False, code=200):
         b = body if raw else body.encode()
         self.send_response(code); self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
+        self.send_header("Cache-Control", "no-store"); self.send_header("Referrer-Policy", "no-referrer"); self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
 
     def do_GET(self):
+        if not self._local():
+            return self._send('Invalid host', 'text/plain', code=403)
         url = urllib.parse.urlsplit(self.path)
+        if url.path == '/saving':
+            return self._send(json.dumps(dict(account=ATTACHMENT.status(), deliveries=SAVES.status(), error=SAVE_POLL_ERROR)), 'application/json')
+        if url.path == '/saving/callback':
+            query = urllib.parse.parse_qs(url.query)
+            cookie = SimpleCookie(self.headers.get('Cookie', ''))
+            try:
+                ATTACHMENT.finish(query.get('code', [''])[0], query.get('state', [''])[0],
+                                  cookie['pc_attach'].value if 'pc_attach' in cookie else '')
+            except DeliveryError:
+                pass  # Safe error is in attachment status; return to the console to retry.
+            self.send_response(303); self.send_header('Location', '/')
+            self.send_header('Set-Cookie', 'pc_attach=; HttpOnly; SameSite=Lax; Path=/saving/callback; Max-Age=0')
+            self.send_header('Cache-Control', 'no-store'); self.send_header('Referrer-Policy', 'no-referrer'); self.end_headers()
+            return
         q = {k: float(v[0]) for k, v in urllib.parse.parse_qs(url.query).items() if k in ("floor", "before")}
         if url.path == "/state":
             return self._send(json.dumps(state(q.get("floor"))), "application/json")
@@ -887,12 +1048,45 @@ class H(BaseHTTPRequestHandler):
                 return self._send(b"", "image/png", raw=True)
         if self.path != "/":
             return self._send("not found", "text/plain", code=404)
-        cfg = {"sfx": sfx_names(), "emoji": EMOJI, "avatars": AVATARS, "backgrounds": BACKGROUNDS}
+        cfg = {"sfx": sfx_names(), "emoji": EMOJI, "avatars": AVATARS, "backgrounds": BACKGROUNDS, "csrf": CSRF}
         self._send(PAGE.replace("CONFIG_JSON", json.dumps(cfg)))
 
     def do_POST(self):
-        n = int(self.headers.get("Content-Length") or 0)
-        body = json.loads(self.rfile.read(n) or "{}")
+        if not self._local() or not secrets.compare_digest(self.headers.get('X-Port-Call-CSRF', ''), CSRF):
+            return self._send('Invalid local request', 'text/plain', code=403)
+        try:
+            n = int(self.headers.get('Content-Length') or 0)
+            if not 0 <= n <= 65536:
+                raise ValueError()
+            body = json.loads(self.rfile.read(n) or '{}')
+            if not isinstance(body, dict):
+                raise ValueError()
+        except (ValueError, TypeError):
+            return self._send('Invalid request', 'text/plain', code=400)
+        if self.path == '/saving/connect':
+            url, cookie = ATTACHMENT.start('http://' + self.headers['Host'] + '/saving/callback')
+            data = json.dumps(dict(url=url)).encode()
+            self.send_response(200); self.send_header('Content-Type', 'application/json')
+            self.send_header('Set-Cookie', 'pc_attach=' + cookie + '; HttpOnly; SameSite=Lax; Path=/saving/callback; Max-Age=600')
+            self.send_header('Cache-Control', 'no-store'); self.send_header('Content-Length', str(len(data)))
+            self.end_headers(); self.wfile.write(data)
+            return
+        if self.path == '/saving/disconnect':
+            ATTACHMENT.disconnect()
+            return self._send('Dialogues detached; local TOPOS saves and retries paused. Previously submitted writes may still finish. Revoke server access in Dialogues Sharing → Connected apps.', 'text/plain')
+        if self.path == '/saving/manual':
+            try:
+                session = next(s for s in SAVES.sessions() if s['id'] == body.get('id'))
+                if not session['ended']:
+                    raise ValueError('End the conversation before saving')
+                raw = gw('/transcripts/by-id/' + urllib.parse.quote(session['bot'], safe=''), 'tx')
+                SAVES.observe(session['id'], raw.get('segments') or [], ended=True)
+                SAVES.approve(session['id'])
+            except (ValueError, StopIteration) as exc:
+                return self._send(str(exc) or 'Unknown conversation', 'text/plain', code=400)
+            except Exception:
+                return self._send('Final transcript unavailable; nothing newly approved', 'text/plain', code=503)
+            return self._send('Transcript approved for saving; delivery status appears above', 'text/plain')
 
         if self.path == "/stt":
             r = stt("/model", {"name": body.get("name")})
@@ -905,6 +1099,16 @@ class H(BaseHTTPRequestHandler):
                 return self._send("that is not a Meet link or code (abc-defg-hij)", "text/plain")
             code = m.group(1)
             name = bot_name(body.get("name"))
+            saving = body.get('saving') or {}
+            destination, mode = saving.get('destination', 'existing'), saving.get('mode', 'batch')
+            if destination not in ('existing', 'topos', 'file', 'supabase', 'postgres') or mode not in ('continuous', 'batch', 'manual'):
+                return self._send('Invalid save options', 'text/plain', code=400)
+            targets = {} if destination == 'existing' else {destination: mode}
+            if saving.get('topos'):
+                targets['topos'] = mode
+            account = ATTACHMENT.status()
+            if 'topos' in targets and not account['connected']:
+                return self._send('Attach Dialogues before selecting TOPOS', 'text/plain', code=400)
             try:
                 gw(f"/bots/google_meet/{code}", method="DELETE")
             except Exception:
@@ -922,6 +1126,8 @@ class H(BaseHTTPRequestHandler):
                 return self._send(f"join refused ({e.code}): {detail}", "text/plain")
             except Exception as e:
                 return self._send(f"join failed: {e}", "text/plain")
+            if targets:
+                SAVES.enroll(r['id'], code, targets, account['resource_id'])
             LAST.update(id=r.get("id"), code=code, status="requested", active_at=None, joined_at=time.time(), ended=None, name=name)
             EVENTS.clear(); PENDING.clear()
             CACHE["last_room"] = code
@@ -972,4 +1178,9 @@ class H(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    ThreadingHTTPServer(("127.0.0.1", 8090), H).serve_forever()
+    init_saving()
+    threading.Thread(target=saving_worker, daemon=True).start()
+    try:
+        ThreadingHTTPServer(("127.0.0.1", 8090), H).serve_forever()
+    finally:
+        SAVE_STOP.set()

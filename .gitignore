@@ -16,3 +16,5 @@ avatars/
 archive/
 cvm.env
 .room
+
+.port-call-saves/

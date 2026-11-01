@@ -1,0 +1,22 @@
+{
+  "app_id": "roost",
+  "name": "Roost",
+  "integration_profile": "web",
+  "client_auth_mode": "public_pkce",
+  "allowed_redirect_uris": [
+    "http://localhost:8090/saving/callback",
+    "http://127.0.0.1:8090/saving/callback"
+  ],
+  "allowed_source_ids": [
+    "roost_transcripts"
+  ],
+  "allowed_scopes": [
+    "messages:write"
+  ],
+  "sources": [
+    {
+      "source_id": "roost_transcripts",
+      "delivery": "client_push"
+    }
+  ]
+}
