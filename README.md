@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/port-call-icon.svg" alt="Port Call's app icon: the bot's white rooster, face on, with a red comb and wattles and an orange beak, on a blue rounded square." width="128">
+</p>
+
 # Port Call
 
 **A Google Meet participant you control from your laptop.** It joins your meeting, transcribes who

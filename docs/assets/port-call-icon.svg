@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="Port Call rooster">
+  <defs><clipPath id="tile"><rect width="1024" height="1024" rx="228"/></clipPath></defs>
+  <g clip-path="url(#tile)">
+    <rect width="1024" height="1024" fill="#2f6fed"/>
+    <g transform="translate(512 612) scale(3.0)">
+      <ellipse cx="0" cy="200" rx="150" ry="120" fill="#dfe3ee"/>
+      <g fill="#e0343f"><circle cx="-46" cy="-140" r="33"/><circle cx="0" cy="-148" r="33"/><circle cx="46" cy="-140" r="33"/></g>
+      <ellipse cx="0" cy="-30" rx="118" ry="112" fill="#f4f6fb"/>
+      <ellipse cx="-46" cy="-46" rx="30" ry="31" fill="#fff"/><circle cx="-46" cy="-44" r="15" fill="#0b0b10"/><circle cx="-41" cy="-50" r="5" fill="#fff"/><ellipse cx="46" cy="-46" rx="30" ry="31" fill="#fff"/><circle cx="46" cy="-44" r="15" fill="#0b0b10"/><circle cx="51" cy="-50" r="5" fill="#fff"/>
+      <path d="M-30 8H30L0 52Z" fill="#f5a524"/>
+      <g fill="#e0343f"><ellipse cx="-22" cy="66" rx="16" ry="26"/><ellipse cx="22" cy="66" rx="16" ry="26"/></g>
+    </g>
+  </g>
+</svg>
