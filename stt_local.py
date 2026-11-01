@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local transcription for Port Call — a local addition, not part of upstream.
+"""Local transcription for Roost — a local addition, not part of upstream.
 
 The bot posts WAV to an OpenAI-style /v1/audio/transcriptions URL. Upstream points that at near.ai;
 this serves it from whisper.cpp on this Mac (Metal), so meeting audio never leaves the machine.

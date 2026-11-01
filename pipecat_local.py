@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pipecat pipeline for Port Call — a local addition, not part of upstream.
+"""Pipecat pipeline for Roost — a local addition, not part of upstream.
 
 Pipecat cannot join a Google Meet, so the bot stays the bot: browser, join, capture, camera, chat.
 What moves here is what happens to the audio once the bot has it. The bot opens one WebSocket per

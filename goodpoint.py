@@ -99,7 +99,7 @@ def raise_banner(mid, score, quote, avatar, bg):
     # Carry the skin on every banner. A camera_show that omits avatar/bg is not neutral: if the
     # HUD version changed, show() re-injects a FRESH page object whose state starts at the
     # defaults (rooster/transcript), so an omitted skin silently reverts the tile mid-meeting.
-    act = json.dumps({"action": "camera_show", "text": "PORT CALL",
+    act = json.dumps({"action": "camera_show", "text": "ROOST",
                       "sub": f"{score}|{quote}", "avatar": avatar, "bg": bg})
     ssh(f"docker exec {BOT} redis-cli PUBLISH bot_commands:meeting:{mid} {shlex.quote(act)}")
 

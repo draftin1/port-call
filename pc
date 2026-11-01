@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Port Call — the one command. Starts the stack, transcription on this machine, and the console;
+# Roost — the one command. Starts the stack, transcription on this machine, and the console;
 # sends the bot into a meeting; drives it.
 #
 #   ./pc up                      start everything, then open http://localhost:8090

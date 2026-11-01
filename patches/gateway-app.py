@@ -62,7 +62,7 @@ _DEFAULT_AGENT_API_URL = "http://agent-api"
 # a URL should be enough: their assistant fetches /llms.txt, learns the auth, the endpoints and the
 # live stream, and can drive the whole thing without anyone pasting curl into a chat window.
 # Deliberately unauthenticated — it is a manual, not data. It names no tokens and no meetings.
-LLMS_TXT = """# Port Call
+LLMS_TXT = """# Roost
 
 A meeting bot you control over HTTP. Send it into a Google Meet, it transcribes with speaker
 attribution, you read the transcript live or afterwards.
@@ -135,7 +135,7 @@ It does not leave on its own.
 """
 
 CONSOLE_HTML = """<!doctype html>
-<meta charset=utf-8><title>Port Call</title>
+<meta charset=utf-8><title>Roost</title>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <style>
 :root{--bg:#12151a;--fg:#e6eaef;--dim:#8b95a1;--line:#262d36;--card:#181d24;--ok:#5fbe90;--no:#e4715d;--go:#6ba6e4}
@@ -166,7 +166,7 @@ tr:last-child td{border-bottom:0}
 .hint{color:var(--dim);font-size:.8rem}
 </style>
 <div class=wrap>
-<h1>Port Call</h1>
+<h1>Roost</h1>
 <div class=sub>Your bot. Your meetings. Your transcripts.</div>
 
 <details id=setup class=card>
@@ -229,7 +229,7 @@ async function join(){
   if(!code){$('joine').textContent='Needs a meeting code.';return}
   try{
     await api('/bots',{method:'POST',body:JSON.stringify({platform:'google_meet',
-      native_meeting_id:code,bot_name:($('name').value.trim()||'Port Call'),voice_agent_enabled:true})});
+      native_meeting_id:code,bot_name:($('name').value.trim()||'Roost'),voice_agent_enabled:true})});
     $('code').value='';refresh();
   }catch(e){$('joine').textContent=e.message}
 }

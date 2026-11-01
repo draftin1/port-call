@@ -1,6 +1,6 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>Port Call HUD source</title>
+<title>Roost HUD source</title>
 <style>
   html, body { margin: 0; padding: 0; background: #000; overflow: hidden; }
   video { display: block; width: 100vw; height: 100vh; object-fit: contain; background: #000; }
@@ -19,5 +19,5 @@
   // identifiable as belonging to one run.
   globalThis.setHud = (line, speaker) => cam.hud({ line, speaker });
   const q = new URLSearchParams(location.search);
-  if (q.get('line')) setHud(q.get('line'), q.get('speaker') || 'PORT CALL');
+  if (q.get('line')) setHud(q.get('line'), q.get('speaker') || 'ROOST');
 </script>

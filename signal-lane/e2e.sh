@@ -88,11 +88,11 @@ echo "== configure seat A (speaker) =="
 node cdp.mjs "$A" init js/hud.js > /dev/null
 sleep 8
 seat "$A" set-devices.js
-raw "$A" "globalThis.__vexaCam.set('PORT CALL E2E', '$W1-$W2-$W3'); globalThis.__pcCam = true; 'ok'" > /dev/null
+raw "$A" "globalThis.__vexaCam.set('ROOST E2E', '$W1-$W2-$W3'); globalThis.__pcCam = true; 'ok'" > /dev/null
 # Caption the frames that actually LEAVE this seat. Signal transmits hud-cam's chromium output via
 # the loopback camera, not the HUD living in Signal's own renderer — so captioning only the latter
 # left the evidence screenshots showing a default caption and identifying no particular run.
-CDP_TARGET=page.html node cdp.mjs "$AHUD" eval -e "setHud('$W1 $W2 $W3', 'PORT CALL E2E')" > /dev/null
+CDP_TARGET=page.html node cdp.mjs "$AHUD" eval -e "setHud('$W1 $W2 $W3', 'ROOST E2E')" > /dev/null
 ok "seat A: virtual_mic + call_out selected, HUD injected and captioned"
 
 echo "== configure seat B (listener) =="

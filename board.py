@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Port Call console — get the bot into a meeting, watch the room, pull its strings.  http://localhost:8090
+"""Roost console — get the bot into a meeting, watch the room, pull its strings.  http://localhost:8090
 
 The bot is a puppet in a live Google Meet; the person at this page is the brain. The page follows
 the bot's lifecycle and shows only what that moment needs:
@@ -43,7 +43,7 @@ GATEWAY = f"http://localhost:{ENV.get('VEXA_GW_PORT', '8056')}"
 # is loaded. The console only relays to it.
 STT = "http://127.0.0.1:8177"
 TOKENS = {"bot": "/tmp/vexa-bot-token.txt", "tx": "/tmp/vexa-tx-token.txt"}   # minted by ./pc up
-BOT_NAME = "Port Call"
+BOT_NAME = "Roost"
 SFX = ["airhorn", "gavel", "ding", "objection", "order", "noted", "correct", "welcome", "timesup"]
 # Meet's picker set VARIES by UI state — a dump taken while presenting showed 🎊 💗 💯 😆 🙁 😲,
 # while the normal in-call picker shows these. The controller fails loudly (with the candidate
@@ -55,7 +55,7 @@ EMOJI = ["👍", "🎉", "💖", "👏", "😂", "😮"]
 AVATARS = ["rooster", "hancock", "tina", "dmarz", "cat", "alien", "dolphin", "monkey"]
 BACKGROUNDS = ["transcript", "vitals", "swarm", "brainrot"]
 
-PAGE = r"""<!doctype html><meta charset=utf-8><title>Port Call</title>
+PAGE = r"""<!doctype html><meta charset=utf-8><title>Roost</title>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <style>
  :root{color-scheme:dark;--bg:#0b0b10;--panel:#14141c;--line:#23233a;--ink:#e8e8f0;--dim:#8a8aa0;--faint:#5a5a70;
@@ -152,7 +152,7 @@ PAGE = r"""<!doctype html><meta charset=utf-8><title>Port Call</title>
 </style>
 
 <header>
-  <span class=brand>PORT CALL</span>
+  <span class=brand>ROOST</span>
   <div class=phase><span class=dot id=dot></span><b id=phase>…</b><span id=sub></span><span id=elapsed></span></div>
   <div id=ready></div>
   <button id=lookbtn class=ghost style=display:none onclick="document.body.classList.toggle('look')">Look</button>
@@ -234,7 +234,7 @@ PAGE = r"""<!doctype html><meta charset=utf-8><title>Port Call</title>
 
 <script>
 const CFG=CONFIG_JSON;
-const BOT_NAME='Port Call';
+const BOT_NAME='Roost';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const hhmm=t=>new Date(t*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
@@ -285,7 +285,7 @@ const PHASES={
   failed:['badd','Not in a call','the last join did not get in'],
   requested:['warnd pulse','Getting in','asking the gateway for a bot'],
   joining:['warnd pulse','Getting in','the bot is opening the meeting'],
-  awaiting_admission:['warnd pulse','Knocking','admit Port Call in your Meet'],
+  awaiting_admission:['warnd pulse','Knocking','admit Roost in your Meet'],
   active:['ok','In the call',''],
   stopping:['warnd pulse','Leaving',''],
 };
@@ -370,7 +370,7 @@ function joiningView(s){
   const n={requested:1,joining:2,awaiting_admission:3}[s.phase]||1;
   [1,2,3].forEach(i=>{$('s'+i).className=i<n?'done':i===n?'now':''});
   $('jtitle').textContent=s.phase==='awaiting_admission'?'Knocking':'Getting in…';
-  $('jinstr').textContent=s.phase==='awaiting_admission'?'Admit "Port Call" in your Meet — only the host sees the knock.'
+  $('jinstr').textContent=s.phase==='awaiting_admission'?'Admit "Roost" in your Meet — only the host sees the knock.'
     :s.phase==='joining'?'The bot is opening the meeting in its browser.':'Asking the gateway for a bot.';
   $('jnote').textContent='If it never goes further, the picture below is what the bot is looking at.';
   $('jelapsed').textContent=s.joined_at?mmss(Date.now()/1000-s.joined_at):'';

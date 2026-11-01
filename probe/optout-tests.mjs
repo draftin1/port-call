@@ -22,7 +22,7 @@ const eq = (a, b, what) => {
 };
 
 /** A bot with a notebook: everything it would publish, post or log, in order. */
-function rig(botName = 'Port Call') {
+function rig(botName = 'Roost') {
   const published = [], posted = [], logged = [];
   const oo = createOptOut({
     publish: async (seg) => { published.push(seg); },
@@ -90,9 +90,9 @@ await test('repeating opt-out does not repeat the marker; moving 1 -> 2 un-names
 });
 
 await test('the bot ignores itself, and ordinary chat', async () => {
-  const r = rig('Port Call');
+  const r = rig('Roost');
   eq(await r.oo.onChat('You', 'opt-out'), null, 'Meet shows our own messages as You');
-  eq(await r.oo.onChat('port call', 'opt-out'), null, 'or under the bot name');
+  eq(await r.oo.onChat('roost', 'opt-out'), null, 'or under the bot name');
   eq(await r.oo.onChat('Bob', 'can I opt-out later?'), null, 'a sentence is not a command');
   eq(r.posted, [], 'no replies');
   eq(roster(), { named: [], unnamed: 0 }, 'nothing registered');

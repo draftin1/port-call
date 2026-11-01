@@ -45,11 +45,11 @@ OUT=$ARCHIVE/$STAMP
 # evidence link led back to the control panel (found 2026-08-27, by clicking one).
 write_index() {
   {
-    echo "<!doctype html><meta charset=utf-8><title>Port Call — daily rung</title>"
+    echo "<!doctype html><meta charset=utf-8><title>Roost — daily rung</title>"
     echo "<style>body{background:#0d0d12;color:#e8e8f0;font:15px system-ui;margin:0;padding:32px;max-width:900px}"
     echo "h1{font-size:20px}table{border-collapse:collapse;width:100%}td,th{text-align:left;padding:7px 10px;"
     echo "border-bottom:1px solid #26263a}a{color:#8ab4ff}.g{color:#7ce38b}.r{color:#ff7b72}code{color:#8a8aa0}</style>"
-    echo "<h1>Port Call — daily rung</h1><p><code>bench + e2e, 05:00, staging rig. Newest first.</code></p>"
+    echo "<h1>Roost — daily rung</h1><p><code>bench + e2e, 05:00, staging rig. Newest first.</code></p>"
     echo "<table><tr><th>when<th>rig<th>bench<th>room<th>e2e<th>evidence"
     # Fields are read BY KEY, not by position: the room column was added 2026-08-28 and every row
     # written before that has five fields where this loop now wants six. Positional reading would

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Provision a tenant on a hosted Port Call instance, and print what they need to use it.
+"""Provision a tenant on a hosted Roost instance, and print what they need to use it.
 
     ./invite.py <gateway-url> <email> "<name>"          # create + mint
     ./invite.py <gateway-url> <email> --show            # look up an existing tenant

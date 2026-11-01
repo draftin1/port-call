@@ -82,8 +82,8 @@ trap stop_all EXIT INT TERM
 # exists" — which is what a stale row looks like from the outside.
 stop_all; sleep 8
 
-spawn "$A" "Port Call A" || { echo "FAIL rig $A never joined $CODE — is the room OPEN?"; exit 1; }
-spawn "$B" "Port Call B" || { echo "FAIL rig $B never joined $CODE"; exit 1; }
+spawn "$A" "Roost A" || { echo "FAIL rig $A never joined $CODE — is the room OPEN?"; exit 1; }
+spawn "$B" "Roost B" || { echo "FAIL rig $B never joined $CODE"; exit 1; }
 echo "both seats active"
 
 LA=/tmp/duel-a-$$.log; LB=/tmp/duel-b-$$.log

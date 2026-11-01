@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Render the Port Call HUD into /dev/video0 so Signal can capture it as a real camera.
+# Render the Roost HUD into /dev/video0 so Signal can capture it as a real camera.
 #
 # WHY THIS EXISTS: Signal captures call video NATIVELY from a device, the same way it captures
 # audio — patching getUserMedia in its renderer does not reach the call, it only answers our own

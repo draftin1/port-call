@@ -2,8 +2,8 @@
 """The counting game — measure what the round trip to a live meeting actually costs.
 
     RIG=1 ./ping.py <meet-code> --lead            # you count back at it; the real number
-    RIG=1 ./ping.py <meet-code> --lead --spawn "Port Call A"     # rig 1 leads
-    RIG=4 ./ping.py <meet-code>        --spawn "Port Call B"     # rig 4 answers — no human
+    RIG=1 ./ping.py <meet-code> --lead --spawn "Roost A"     # rig 1 leads
+    RIG=4 ./ping.py <meet-code>        --spawn "Roost B"     # rig 4 answers — no human
 
 RUNS ON FRACTAL, next to the rig. Polling the gateway over ssh would add the very latency this
 is trying to measure; every timestamp below comes from the same host clock.
