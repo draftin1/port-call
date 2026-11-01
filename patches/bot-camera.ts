@@ -1139,6 +1139,24 @@ export function installHud(): void {
       ctx.fillText('NOT LISTENING', W / 2, 54);
     }
 
+    // HEADLINE, from the console's "headline on the tile". S.title was stored by every camera_show
+    // and drawn by nothing, so Apply looked broken. 'VEXA' is the console's value for an empty box:
+    // it means no headline. Sits under NOT LISTENING and inside the band Meet shows; the font
+    // shrinks to fit because the box takes any length.
+    if (S.title && S.title !== 'VEXA') {
+      let size = 46;
+      ctx.font = 'bold ' + size + 'px system-ui, sans-serif';
+      while (size > 20 && ctx.measureText(S.title).width > SAFE_W - 48) {
+        size -= 2;
+        ctx.font = 'bold ' + size + 'px system-ui, sans-serif';
+      }
+      ctx.fillStyle = 'rgba(16,16,24,0.88)';
+      ctx.fillRect(SAFE_X0, 76, SAFE_W, 66);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(S.title, W / 2, 109 + size * 0.36, SAFE_W - 24);
+    }
+
     // meter + counters
     for (let i = 0; i < 26; i++) {
       const h = hot ? 8 + Math.abs(Math.sin(t / 7 + i)) * 30 : 5;
@@ -1202,7 +1220,7 @@ export function installHud(): void {
     stream,
     set(title: any, sub: any) { S.title = title || S.title;
                                const n = sub || ''; if (n !== S.sub) S.subAt = S.frames; S.sub = n; },
-    version: 'hud-v14-monkey',
+    version: 'hud-v15-headline',
     avatars: () => Object.keys(AVATARS),
     backgrounds: () => Object.keys(BACKGROUNDS),
     speakerColor,
@@ -1318,7 +1336,7 @@ export function createCameraController(page: Page): CameraController {
       // HUD edits become hot too (no rejoin), matching the Node-side surfaces.
       const stale = await page.evaluate(() => {
         const g: any = globalThis as any;
-        if (g.__vexaCam && g.__vexaCam.version === 'hud-v14-monkey') return false;
+        if (g.__vexaCam && g.__vexaCam.version === 'hud-v15-headline') return false;
         try { delete g.__vexaCam; } catch { g.__vexaCam = undefined; }
         return true;
       }).catch(() => false);

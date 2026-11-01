@@ -257,13 +257,16 @@ function speak(){const v=$('say').value.trim(); if(v){act({action:'speak',text:v
 function chat(){const v=$('chat').value.trim(); if(v){act({action:'chat_send',text:v});$('chat').value=''}}
 function cam(){act({action:'camera_show',text:$('head').value||'VEXA',avatar:$('avatar').value,bg:$('bg').value})}
 let PRESENTING=false;
+// Set only by a join from this page, so reloading mid-call cannot overwrite the tile with the
+// picker's defaults. The bot cannot know the picks at spawn; render() sends them once it is in.
+let APPLY_SKIN=false;
 function present(){act(PRESENTING?{action:'screen_share_stop'}:{action:'screen_share',text:$('head').value||'VEXA'})}
 async function join(){
   const room=$('roomin').value.trim()||S.last_room||'';
   if(!room){$('roomin').focus();return}
   $('banner').style.display='none';
   const t=await post('/join',{room,transcribe:$('txjoin').checked});
-  if(/^joining/.test(t)) $('roomin').value=''; else {$('banner').textContent=t;$('banner').style.display='block'}
+  if(/^joining/.test(t)){$('roomin').value='';APPLY_SKIN=true} else {$('banner').textContent=t;$('banner').style.display='block'}
   refresh();
 }
 async function leave(cancel){
@@ -310,6 +313,7 @@ function txview(s,m){
 function mode(p){return p==='active'||p==='stopping'?'call':(p==='requested'||p==='joining'||p==='awaiting_admission')?'joining':'lobby'}
 function render(s){
   S=s; BOT=s.bot;
+  if(APPLY_SKIN&&s.phase==='active'&&BOT){APPLY_SKIN=false;cam()}
   const [cls,title,sub]=PHASES[s.phase]||PHASES.none, m=mode(s.phase);
   $('dot').className='dot '+cls; $('phase').textContent=title;
   const oo=s.optouts||{}, named=oo.named||[], nout=named.length+(oo.unnamed||0);

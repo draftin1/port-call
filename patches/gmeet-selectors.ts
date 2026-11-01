@@ -89,6 +89,10 @@ export const googleRejectionIndicators: string[] = [
   'text=can\'t join this call',
   'text=can’t join this call', // typographic apostrophe (live Meet copy)
   'text=cannot join this call',
+  // Meet's live wording says "video call", which none of the above match: the refused bot went on
+  // polling, then followed Meet's countdown to its marketing page, still reporting that it was waiting.
+  'text=can\'t join this video call',
+  'text=can’t join this video call',
   'text=Ask to join again',
   'button:has-text("Ask to join again")',
 
