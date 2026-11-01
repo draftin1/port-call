@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="Roost: a rooster with an electric glow">
+  <defs>
+    <clipPath id="tile"><rect width="1024" height="1024" rx="228"/></clipPath>
+    <radialGradient id="charge" cx="50%" cy="50%" r="72%">
+      <stop offset="0" stop-color="#2f6fed"/><stop offset=".55" stop-color="#1a2f9e"/><stop offset="1" stop-color="#0a0f3c"/>
+    </radialGradient>
+    <filter id="wide" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="46"/></filter>
+    <filter id="near" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="16"/></filter>
+    <filter id="arcglow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="11"/></filter>
+  </defs>
+  <g clip-path="url(#tile)">
+    <rect width="1024" height="1024" fill="url(#charge)"/>
+    <g transform="translate(512 648) scale(2.55)" fill="#7a4dff" filter="url(#wide)" opacity=".95"><ellipse cx="0" cy="200" rx="150" ry="120"/><circle cx="-46" cy="-140" r="33"/><circle cx="0" cy="-148" r="33"/><circle cx="46" cy="-140" r="33"/><ellipse cx="0" cy="-30" rx="118" ry="112"/></g>
+    <g transform="translate(512 648) scale(2.55)" fill="#37e8ff" stroke="#37e8ff" stroke-width="13" filter="url(#near)"><ellipse cx="0" cy="200" rx="150" ry="120"/><circle cx="-46" cy="-140" r="33"/><circle cx="0" cy="-148" r="33"/><circle cx="46" cy="-140" r="33"/><ellipse cx="0" cy="-30" rx="118" ry="112"/></g>
+    <g fill="none" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M255 286 L303 231 L368 195 L446 217 L512 182 L581 198 L650 212 L706 255 L769 286 M197 769 L167 711 L174 643 L133 585 L147 520 L148 453 L184 397 M840 397 L876 453 L873 521 L888 585 L885 651 L850 708 L827 769 M581 198 L567 158 L537 133 M174 643 L137 655 L95 649 M888 585 L927 571 L954 550" stroke="#37e8ff" stroke-width="34" filter="url(#arcglow)"/>
+      <path d="M255 286 L303 231 L368 195 L446 217 L512 182 L581 198 L650 212 L706 255 L769 286 M197 769 L167 711 L174 643 L133 585 L147 520 L148 453 L184 397 M840 397 L876 453 L873 521 L888 585 L885 651 L850 708 L827 769" stroke="#bff8ff" stroke-width="17"/>
+      <path d="M581 198 L567 158 L537 133 M174 643 L137 655 L95 649 M888 585 L927 571 L954 550" stroke="#bff8ff" stroke-width="11"/>
+      <path d="M255 286 L303 231 L368 195 L446 217 L512 182 L581 198 L650 212 L706 255 L769 286 M197 769 L167 711 L174 643 L133 585 L147 520 L148 453 L184 397 M840 397 L876 453 L873 521 L888 585 L885 651 L850 708 L827 769" stroke="#ffffff" stroke-width="7"/>
+    </g>
+    <g transform="translate(512 648) scale(2.55)">
+      <ellipse cx="0" cy="200" rx="150" ry="120" fill="#dfe3ee"/>
+      <g fill="#e0343f"><circle cx="-46" cy="-140" r="33"/><circle cx="0" cy="-148" r="33"/><circle cx="46" cy="-140" r="33"/></g>
+      <ellipse cx="0" cy="-30" rx="118" ry="112" fill="#f4f6fb"/>
+      <ellipse cx="-46" cy="-46" rx="30" ry="31" fill="#fff"/><circle cx="-46" cy="-44" r="15" fill="#0b0b10"/><circle cx="-41" cy="-50" r="5" fill="#fff"/><ellipse cx="46" cy="-46" rx="30" ry="31" fill="#fff"/><circle cx="46" cy="-44" r="15" fill="#0b0b10"/><circle cx="51" cy="-50" r="5" fill="#fff"/>
+      <path d="M-30 8H30L0 52Z" fill="#f5a524"/>
+      <g fill="#e0343f"><ellipse cx="-22" cy="66" rx="16" ry="26"/><ellipse cx="22" cy="66" rx="16" ry="26"/></g>
+    </g>
+  </g>
+</svg>
